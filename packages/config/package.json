@@ -1,0 +1,11 @@
+{
+  "name": "@tuition-escrow/config",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "main": "index.js",
+  "files": [
+    "tsconfig.base.json",
+    ".eslintrc.js",
+    ".prettierrc.js"
+  ]
+}

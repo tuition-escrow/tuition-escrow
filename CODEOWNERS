@@ -1,0 +1,11 @@
+# Code Owners
+
+# Contracts require extra review
+/contracts/ @tuition-escrow/contracts-reviewers
+/apps/attester/ @tuition-escrow/security-reviewers
+
+# Key handling
+**/kms* @tuition-escrow/security-reviewers
+**/sponsor* @tuition-escrow/security-reviewers
+**/fee-bump* @tuition-escrow/security-reviewers
+**/secrets* @tuition-escrow/security-reviewers

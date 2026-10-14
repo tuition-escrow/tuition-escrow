@@ -1,0 +1,28 @@
+{
+  "name": "tuition-escrow",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "packageManager": "pnpm@8.15.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "bindings": "turbo run bindings",
+    "db:migrate": "pnpm --filter @tuition-escrow/api db:migrate",
+    "db:seed": "pnpm --filter @tuition-escrow/api db:seed",
+    "contract:build": "cargo build --target wasm32-unknown-unknown --release -p voucher",
+    "contract:test": "cargo test"
+  },
+  "devDependencies": {
+    "@turbo/gen": "^1.12.4",
+    "prettier": "^3.2.5",
+    "turbo": "^1.12.4",
+    "typescript": "^5.3.3"
+  }
+}
