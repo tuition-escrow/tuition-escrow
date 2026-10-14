@@ -1,0 +1,17 @@
+{
+  "name": "@tuition-escrow/contract-bindings",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "bindings": "tsc"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^13.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
