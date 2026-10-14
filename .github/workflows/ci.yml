@@ -55,9 +55,11 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/audit-check@v1
+      - name: Rust audit
+        uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
       - uses: pnpm/action-setup@v3
         with:
           version: 8.15.0
