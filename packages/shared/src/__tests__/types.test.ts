@@ -4,7 +4,6 @@ import {
   FeeCategoryCode,
   FeeCategoryFromCode,
   VoucherStatus,
-  VoucherStatusCode,
 } from '../types';
 
 describe('FeeCategory', () => {
