@@ -1,0 +1,408 @@
+openapi: "3.1.0"
+info:
+  title: Tuition Escrow API
+  version: "0.1.0-alpha"
+  description: |
+    REST API for the Tuition Escrow platform.
+
+    **Privacy note:** No student names, DOBs, grades, or free-text memos
+    are accepted or returned by any endpoint. Student identifiers are
+    stored encrypted and only accessible to the owning school.
+
+    **Fund movement note:** No endpoint in this API moves escrowed funds
+    or signs transactions on behalf of funders. The funder's wallet signs
+    the on-chain `fund` transaction client-side using the parameters
+    returned by `POST /vouchers/prepare`.
+
+servers:
+  - url: http://localhost:3001
+    description: Local development
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    School:
+      type: object
+      required: [id, name, stellarAddress, verificationStatus, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        stellarAddress:
+          type: string
+          minLength: 56
+          maxLength: 56
+        verificationStatus:
+          type: string
+          enum: [pending, active, suspended]
+        createdAt:
+          type: string
+          format: date-time
+
+    Voucher:
+      type: object
+      required: [voucherId, funder, school, token, amount, category, studentRef, expiresAt, status]
+      properties:
+        voucherId:
+          type: integer
+        funder:
+          type: string
+          description: Stellar address
+        school:
+          type: string
+          description: Stellar address
+        token:
+          type: string
+          description: SAC address
+        amount:
+          type: integer
+          description: Token amount (no decimals)
+        category:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: "0=TUITION 1=BOARDING 2=EXAM_FEES 3=UNIFORM_BOOKS 4=TRANSPORT"
+        studentRef:
+          type: string
+          description: Opaque SHA-256 hash — never a name or identifier
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [Funded, Released, Reclaimed, Cancelled, Disputed, Refunded]
+
+    StudentMapping:
+      type: object
+      description: |
+        Decrypted student mapping. Only returned to the school_admin of the
+        owning school. Never logged.
+      required: [studentIdentifier, salt]
+      properties:
+        studentIdentifier:
+          type: string
+        salt:
+          type: string
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        details:
+          type: object
+
+paths:
+  /health:
+    get:
+      summary: Liveness check
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /ready:
+    get:
+      summary: Readiness check (DB connectivity)
+      operationId: getReady
+      responses:
+        "200":
+          description: Server is ready
+        "503":
+          description: DB unavailable
+
+  /schools:
+    get:
+      summary: List active schools (public)
+      operationId: listSchools
+      responses:
+        "200":
+          description: List of active schools
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  schools:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/School"
+
+    post:
+      summary: Onboard a school (platform_admin only)
+      operationId: createSchool
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, stellarAddress]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                stellarAddress:
+                  type: string
+                  minLength: 56
+                  maxLength: 56
+      responses:
+        "201":
+          description: School created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  school:
+                    $ref: "#/components/schemas/School"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Stellar address already registered
+
+  /schools/{id}:
+    patch:
+      summary: Update school payout address (platform_admin only — resets verification)
+      operationId: updateSchool
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stellarAddress]
+              properties:
+                stellarAddress:
+                  type: string
+                  minLength: 56
+                  maxLength: 56
+      responses:
+        "200":
+          description: School updated; verificationStatus reset to pending
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /vouchers/prepare:
+    post:
+      summary: |
+        Prepare voucher parameters (funder only).
+        Generates salt, computes student_ref, stores encrypted mapping.
+        Returns parameters for the funder's wallet to sign the on-chain fund() call.
+        Does NOT sign or submit any transaction.
+      operationId: prepareVoucher
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schoolAddress, tokenAddress, amount, category, studentIdentifier, expiresAt]
+              properties:
+                schoolAddress:
+                  type: string
+                  minLength: 56
+                  maxLength: 56
+                tokenAddress:
+                  type: string
+                  minLength: 56
+                  maxLength: 56
+                amount:
+                  type: integer
+                  minimum: 1
+                category:
+                  type: integer
+                  minimum: 0
+                  maximum: 4
+                studentIdentifier:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                  description: School's internal student ID — stored encrypted, never returned to caller
+                expiresAt:
+                  type: integer
+                  description: Unix timestamp
+      responses:
+        "201":
+          description: |
+            Parameters for the on-chain fund() call.
+            student_ref is the opaque hash — safe for on-chain use.
+            salt and studentIdentifier are NEVER returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [studentRef, mappingId, fundParams]
+                properties:
+                  studentRef:
+                    type: string
+                    description: Hex-encoded SHA-256 hash for the on-chain fund() call
+                  mappingId:
+                    type: string
+                    format: uuid
+                  fundParams:
+                    type: object
+                    description: Parameters to pass to the contract fund() function
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /vouchers:
+    get:
+      summary: List vouchers (role-scoped)
+      operationId: listVouchers
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Role-scoped voucher list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vouchers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Voucher"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /vouchers/{id}:
+    get:
+      summary: Get a single voucher (role-scoped)
+      operationId: getVoucher
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Voucher
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  voucher:
+                    $ref: "#/components/schemas/Voucher"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /schools/{id}/vouchers/{voucherId}/mapping:
+    get:
+      summary: |
+        Get decrypted student mapping (school_admin of the owning school only).
+        Every call is written to the audit log.
+      operationId: getStudentMapping
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: School ID
+        - name: voucherId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Decrypted student identifier and salt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mapping:
+                    $ref: "#/components/schemas/StudentMapping"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          description: Mapping has been deleted (retention)
+
+  components:
+    responses:
+      ValidationError:
+        description: Request validation failed
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Error"
+      Unauthorized:
+        description: Missing or invalid JWT
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Error"
+      Forbidden:
+        description: Insufficient role
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Error"
+      NotFound:
+        description: Resource not found
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Error"
