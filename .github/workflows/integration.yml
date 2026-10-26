@@ -1,0 +1,41 @@
+name: Integration Tests
+
+# Integration tests are expensive (network I/O, SAC transfers).
+# Run only on pushes to main or when a PR is labelled 'run-integration'.
+# The in-process Soroban testutils tests in contracts/integration/ are always
+# run; the true on-network tests would require a Quickstart container (not
+# configured here — see scripts/deploy-testnet.sh for manual runs).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [labeled]
+
+jobs:
+  contract-integration:
+    name: Contract Integration Tests (in-process SAC)
+    runs-on: ubuntu-latest
+    # For PRs, only run when explicitly labelled to keep CI fast.
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-integration'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run integration tests
+        run: cargo test -p integration -- --nocapture
+
+      - name: Run voucher unit tests (regression guard)
+        run: cargo test -p voucher

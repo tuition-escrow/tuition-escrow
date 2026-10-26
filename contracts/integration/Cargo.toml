@@ -1,0 +1,23 @@
+[package]
+name = "integration"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# This crate contains integration tests that run against a real Stellar
+# Asset Contract (SAC) token on a local Quickstart network.
+# Run with:  cargo test -p integration -- --nocapture
+# Requires:  SOROBAN_RPC_URL and NETWORK_PASSPHRASE set in the environment
+#            pointing at a running Stellar Quickstart container.
+
+[lib]
+# No production code; this crate exists only for tests.
+# Without a cdylib target it compiles as a regular rlib for the test harness.
+
+[dependencies]
+soroban-sdk = { version = "22.0.0", features = ["testutils"] }
+voucher = { path = "../voucher" }
+
+[dev-dependencies]
+soroban-sdk = { version = "22.0.0", features = ["testutils"] }
+tokio = { version = "1", features = ["rt", "macros"] }
