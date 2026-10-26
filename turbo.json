@@ -19,7 +19,7 @@
     },
     "bindings": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", "src/**"]
     },
     "clean": {
       "cache": false

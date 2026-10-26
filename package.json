@@ -18,6 +18,9 @@
     "db:seed": "pnpm --filter @tuition-escrow/api db:seed",
     "contract:build": "cargo build --target wasm32-unknown-unknown --release -p voucher",
     "contract:test": "cargo test",
+    "contract:bindings": "./scripts/generate-bindings.sh",
+    "deploy:testnet": "./scripts/deploy-testnet.sh",
+    "identities:create": "./scripts/create-identities.sh",
     "prepare": "husky install"
   },
   "devDependencies": {
