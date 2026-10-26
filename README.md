@@ -218,6 +218,21 @@ pub struct Voucher {
 | `get_voucher(id)` | Anyone | Read-only |
 | `extend_ttl(id)` | Anyone | Extends storage lifetime for long-running vouchers |
 
+### Expiry boundary semantics
+
+The contract resolves races at the exact expiry instant as follows:
+
+| Operation | Condition for success |
+| --- | --- |
+| `confirm` | `ledger_timestamp < expires_at` (strictly **before** expiry) |
+| `reclaim` | `ledger_timestamp >= expires_at` (at expiry **or after**) |
+
+At the exact ledger second where `ledger_timestamp == expires_at`:
+- `confirm` **fails** with `AlreadyExpired`
+- `reclaim` **succeeds**
+
+This is a deliberate *fail-closed* choice: when the clock is ambiguous, return the money to the funder rather than risk a late release to the school.
+
 ### Events
 
 Events are the source of truth for the indexer. Emit one for every state change, containing only non-sensitive fields.

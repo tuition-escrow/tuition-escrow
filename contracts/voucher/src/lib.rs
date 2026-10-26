@@ -2,11 +2,11 @@
 mod errors;
 mod event;
 mod storage;
+#[cfg(test)]
+mod test;
 mod types;
 
-use soroban_sdk::{
-    contract, contractimpl, symbol_short, token, Address, BytesN, Env, Vec,
-};
+use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, BytesN, Env, Vec};
 
 pub use errors::Error;
 pub use types::{Config, School, Status, Voucher};
@@ -16,6 +16,7 @@ pub struct VoucherContract;
 
 #[contractimpl]
 impl VoucherContract {
+    /// One-time initialisation.  Calling again returns `InvalidStatus`.
     pub fn initialize(
         e: Env,
         admin: Address,
@@ -28,6 +29,14 @@ impl VoucherContract {
             return Err(Error::InvalidStatus);
         }
         admin.require_auth();
+
+        if min_amount <= 0 || max_amount <= 0 || min_amount > max_amount {
+            return Err(Error::InvalidAmount);
+        }
+        if max_expiry_hours == 0 {
+            return Err(Error::InvalidAmount);
+        }
+
         let config = Config {
             admin,
             allowed_tokens,
@@ -39,6 +48,7 @@ impl VoucherContract {
         Ok(())
     }
 
+    /// Admin-only: whitelist a school and set its default attester set + threshold.
     pub fn register_school(
         e: Env,
         school: Address,
@@ -48,7 +58,7 @@ impl VoucherContract {
         let config = storage::get_config(&e).ok_or(Error::NotAuthorized)?;
         config.admin.require_auth();
 
-        if threshold < 1 || (threshold as u32) > attesters.len() as u32 {
+        if threshold < 1 || threshold > attesters.len() {
             return Err(Error::InvalidAmount);
         }
 
@@ -61,6 +71,15 @@ impl VoucherContract {
         Ok(())
     }
 
+    /// Funder deposits tokens and creates a voucher.
+    ///
+    /// Expiry boundary: `expires_at` is the **exclusive** lower bound for
+    /// `reclaim` and the **exclusive** upper bound for `confirm`.  That is:
+    ///   - `confirm` succeeds when `ledger_timestamp < expires_at`
+    ///   - `reclaim` succeeds when `ledger_timestamp >= expires_at`
+    /// This prevents both operations from succeeding at the exact same second
+    /// and is documented in README § Smart contract specification.
+    #[allow(clippy::too_many_arguments)]
     pub fn fund(
         e: Env,
         funder: Address,
@@ -80,15 +99,18 @@ impl VoucherContract {
             return Err(Error::SchoolNotRegistered);
         }
 
+        // Token allowlist
         let token_allowed = config.allowed_tokens.iter().any(|t| t == token);
         if !token_allowed {
             return Err(Error::TokenNotAllowed);
         }
 
+        // Amount bounds (also rejects zero and negative via min_amount > 0 invariant)
         if amount < config.min_amount || amount > config.max_amount {
             return Err(Error::InvalidAmount);
         }
 
+        // Category range
         if category > 4 {
             return Err(Error::InvalidAmount);
         }
@@ -98,7 +120,14 @@ impl VoucherContract {
             return Err(Error::AlreadyExpired);
         }
 
-        let max_expiry = now + config.max_expiry_hours * 3600;
+        let max_expiry = now
+            .checked_add(
+                config
+                    .max_expiry_hours
+                    .checked_mul(3600)
+                    .ok_or(Error::InvalidAmount)?,
+            )
+            .ok_or(Error::InvalidAmount)?;
         if expires_at > max_expiry {
             return Err(Error::InvalidAmount);
         }
@@ -119,6 +148,7 @@ impl VoucherContract {
             attesters: school_data.attesters.clone(),
             threshold: school_data.threshold,
             attestation_count: 0,
+            confirmed_by: Vec::new(&e),
             created_at: now,
         };
 
@@ -132,25 +162,37 @@ impl VoucherContract {
         Ok(id)
     }
 
+    /// Authorised attester records one attestation.
+    /// When the threshold is reached the funds transfer to the school.
+    ///
+    /// Boundary: `confirm` requires `ledger_timestamp < expires_at` (strictly before).
     pub fn confirm(e: Env, voucher_id: u64, attester: Address) -> Result<(), Error> {
         attester.require_auth();
 
         let mut voucher = storage::get_voucher(&e, voucher_id).ok_or(Error::VoucherNotFound)?;
 
-        let now = e.ledger().timestamp();
-        if voucher.expires_at <= now {
-            return Err(Error::AlreadyExpired);
-        }
-
         if voucher.status != Status::Funded {
             return Err(Error::InvalidStatus);
         }
 
+        let now = e.ledger().timestamp();
+        if now >= voucher.expires_at {
+            return Err(Error::AlreadyExpired);
+        }
+
+        // Must be in the school's attester set
         let is_attester = voucher.attesters.iter().any(|a| a == attester);
         if !is_attester {
             return Err(Error::NotAuthorized);
         }
 
+        // Prevent duplicate attestations by the same address
+        let already_confirmed = voucher.confirmed_by.iter().any(|a| a == attester);
+        if already_confirmed {
+            return Err(Error::DuplicateAttestation);
+        }
+
+        voucher.confirmed_by.push_back(attester.clone());
         voucher.attestation_count += 1;
 
         e.events().publish(
@@ -160,11 +202,15 @@ impl VoucherContract {
 
         if voucher.attestation_count >= voucher.threshold {
             let token_client = token::Client::new(&e, &voucher.token);
-            token_client.transfer(&e.current_contract_address(), &voucher.school, &voucher.amount);
+            token_client.transfer(
+                &e.current_contract_address(),
+                &voucher.school,
+                &voucher.amount,
+            );
             voucher.status = Status::Released;
             e.events().publish(
                 (symbol_short!("released"),),
-                (voucher_id,),
+                (voucher_id, voucher.school.clone(), voucher.amount),
             );
         }
 
@@ -172,63 +218,75 @@ impl VoucherContract {
         Ok(())
     }
 
+    /// Funder reclaims funds after expiry.
+    ///
+    /// Boundary: `reclaim` requires `ledger_timestamp >= expires_at`.
     pub fn reclaim(e: Env, voucher_id: u64) -> Result<(), Error> {
         let mut voucher = storage::get_voucher(&e, voucher_id).ok_or(Error::VoucherNotFound)?;
 
         voucher.funder.require_auth();
 
-        let now = e.ledger().timestamp();
-        if voucher.expires_at > now {
-            return Err(Error::NotExpired);
-        }
-
         if voucher.status != Status::Funded {
             return Err(Error::InvalidStatus);
         }
 
+        let now = e.ledger().timestamp();
+        if now < voucher.expires_at {
+            return Err(Error::NotExpired);
+        }
+
         let token_client = token::Client::new(&e, &voucher.token);
-        token_client.transfer(&e.current_contract_address(), &voucher.funder, &voucher.amount);
+        token_client.transfer(
+            &e.current_contract_address(),
+            &voucher.funder,
+            &voucher.amount,
+        );
         voucher.status = Status::Reclaimed;
         e.events().publish(
             (symbol_short!("reclaimed"),),
-            (voucher_id,),
+            (voucher_id, voucher.funder.clone(), voucher.amount),
         );
 
         storage::set_voucher(&e, voucher_id, &voucher);
         Ok(())
     }
 
+    /// Funder and school jointly cancel before expiry; funds return to funder.
     pub fn cancel(e: Env, voucher_id: u64) -> Result<(), Error> {
         let mut voucher = storage::get_voucher(&e, voucher_id).ok_or(Error::VoucherNotFound)?;
 
         voucher.funder.require_auth();
         voucher.school.require_auth();
 
-        let now = e.ledger().timestamp();
-        if voucher.expires_at <= now {
-            return Err(Error::AlreadyExpired);
-        }
-
         if voucher.status != Status::Funded {
             return Err(Error::InvalidStatus);
         }
 
+        let now = e.ledger().timestamp();
+        if now >= voucher.expires_at {
+            return Err(Error::AlreadyExpired);
+        }
+
         let token_client = token::Client::new(&e, &voucher.token);
-        token_client.transfer(&e.current_contract_address(), &voucher.funder, &voucher.amount);
-        voucher.status = Status::Cancelled;
-        e.events().publish(
-            (symbol_short!("cancelled"),),
-            (voucher_id,),
+        token_client.transfer(
+            &e.current_contract_address(),
+            &voucher.funder,
+            &voucher.amount,
         );
+        voucher.status = Status::Cancelled;
+        e.events()
+            .publish((symbol_short!("cancelled"),), (voucher_id,));
 
         storage::set_voucher(&e, voucher_id, &voucher);
         Ok(())
     }
 
+    /// Read a voucher (anyone).
     pub fn get_voucher(e: Env, id: u64) -> Result<Voucher, Error> {
         storage::get_voucher(&e, id).ok_or(Error::VoucherNotFound)
     }
 
+    /// Extend the persistent-storage TTL for a long-running voucher (anyone).
     pub fn extend_ttl(e: Env, id: u64) -> Result<(), Error> {
         let voucher = storage::get_voucher(&e, id).ok_or(Error::VoucherNotFound)?;
         storage::set_voucher(&e, id, &voucher);

@@ -1,9 +1,19 @@
 [workspace]
 resolver = "2"
 members = [
-    "contracts/voucher"
+    "contracts/voucher",
+    "contracts/integration",
 ]
 exclude = []
+
+# ── Workspace-level dependency pins ────────────────────────────────────────
+# soroban-env-host 22.1.3 allows `ed25519-dalek >= 2.0.0`.  Cargo resolves
+# this to 3.0.0, which changed a CryptoRng trait bound that breaks the test
+# PRNG in soroban-env-host's builtin contract helpers.  Pin via workspace
+# dependencies so the resolver picks 2.x.  WASM production builds are
+# unaffected (ed25519-dalek is not used in the production contract code).
+[workspace.dependencies]
+ed25519-dalek = "=2.2.0"
 
 [profile.release]
 opt-level = "z"

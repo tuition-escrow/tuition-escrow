@@ -1,5 +1,5 @@
-use soroban_sdk::{contracttype, Address, Env, Vec};
 use crate::types::{Config, School, Voucher};
+use soroban_sdk::{contracttype, Address, Env};
 
 #[derive(Clone)]
 #[contracttype]
@@ -32,12 +32,17 @@ pub fn set_config(e: &Env, config: &Config) {
 
 pub fn get_voucher_counter(e: &Env) -> u64 {
     extend_instance_ttl(e);
-    e.storage().instance().get(&DataKey::VoucherCounter).unwrap_or(0)
+    e.storage()
+        .instance()
+        .get(&DataKey::VoucherCounter)
+        .unwrap_or(0)
 }
 
 pub fn increment_voucher_counter(e: &Env) -> u64 {
     let counter = get_voucher_counter(e) + 1;
-    e.storage().instance().set(&DataKey::VoucherCounter, &counter);
+    e.storage()
+        .instance()
+        .set(&DataKey::VoucherCounter, &counter);
     extend_instance_ttl(e);
     counter
 }
@@ -54,12 +59,18 @@ pub fn set_voucher(e: &Env, id: u64, voucher: &Voucher) {
 }
 
 pub fn get_school(e: &Env, school: &Address) -> Option<School> {
-    e.storage().persistent().get(&DataKey::School(school.clone()))
+    e.storage()
+        .persistent()
+        .get(&DataKey::School(school.clone()))
 }
 
 pub fn set_school(e: &Env, school: &Address, school_data: &School) {
-    e.storage().persistent().set(&DataKey::School(school.clone()), school_data);
     e.storage()
         .persistent()
-        .extend_ttl(&DataKey::School(school.clone()), DAY_IN_LEDGERS, 30 * DAY_IN_LEDGERS);
+        .set(&DataKey::School(school.clone()), school_data);
+    e.storage().persistent().extend_ttl(
+        &DataKey::School(school.clone()),
+        DAY_IN_LEDGERS,
+        30 * DAY_IN_LEDGERS,
+    );
 }

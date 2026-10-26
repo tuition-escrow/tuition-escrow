@@ -42,3 +42,6 @@ pnpm-debug.log*
 # Cache
 .cache
 Plan.md
+
+# Soroban test snapshots (deterministic but large; regenerated on each run)
+**/test_snapshots/

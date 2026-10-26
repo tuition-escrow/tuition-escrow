@@ -7,8 +7,18 @@ pub enum Status {
     Released = 1,
     Reclaimed = 2,
     Cancelled = 3,
-    Disputed = 4,  // reserved, not implemented
-    Refunded = 5,  // reserved, not implemented
+    Disputed = 4, // reserved, not implemented this sprint
+    Refunded = 5, // reserved, not implemented this sprint
+}
+
+impl Status {
+    /// Returns true when no further state change is possible.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Status::Released | Status::Reclaimed | Status::Cancelled | Status::Refunded
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -24,7 +34,10 @@ pub struct Voucher {
     pub status: Status,
     pub attesters: Vec<Address>,
     pub threshold: u32,
+    /// Number of *distinct* attesters who have confirmed.
     pub attestation_count: u32,
+    /// Tracks which attester addresses have already confirmed to prevent duplicates.
+    pub confirmed_by: Vec<Address>,
     pub created_at: u64,
 }
 
