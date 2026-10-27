@@ -1,0 +1,5 @@
+/* Minimal global styles — using Tailwind via CDN in dev for simplicity.
+   In production, install tailwindcss properly. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
