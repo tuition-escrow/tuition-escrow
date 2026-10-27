@@ -4,7 +4,11 @@
   "pipeline": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "target/wasm32-unknown-unknown/release/**"]
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "target/wasm32-unknown-unknown/release/**"
+      ]
     },
     "lint": {
       "dependsOn": ["^lint"]

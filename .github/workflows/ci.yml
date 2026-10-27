@@ -7,6 +7,7 @@ on:
     branches: [main]
 
 jobs:
+  # ── Rust: contract ────────────────────────────────────────────────────────
   rust-checks:
     name: Rust Checks
     runs-on: ubuntu-latest
@@ -23,11 +24,12 @@ jobs:
         run: cargo fmt --check
       - name: Run clippy
         run: cargo clippy -- -D warnings
-      - name: Run tests
+      - name: Run contract unit tests
         run: cargo test
       - name: Build WASM
         run: cargo build --target wasm32-unknown-unknown --release
 
+  # ── Node.js: all TypeScript packages and apps ─────────────────────────────
   node-checks:
     name: Node.js Checks
     runs-on: ubuntu-latest
@@ -42,13 +44,36 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Lint all packages
       - name: Lint
         run: pnpm lint
-      - name: Test
-        run: pnpm test
-      - name: Build
+
+      # Build shared packages first (bindings depend on them)
+      - name: Build shared packages
+        run: pnpm --filter @tuition-escrow/shared build
+
+      # Test each app/package
+      - name: Test — shared
+        run: pnpm --filter @tuition-escrow/shared test
+
+      - name: Test — api
+        run: pnpm --filter @tuition-escrow/api test
+
+      - name: Test — indexer
+        run: pnpm --filter @tuition-escrow/indexer test
+
+      - name: Test — attester
+        run: pnpm --filter @tuition-escrow/attester test
+
+      - name: Test — web (unit + component)
+        run: pnpm --filter @tuition-escrow/web test
+
+      # Build everything to catch type errors
+      - name: Build all
         run: pnpm build
 
+  # ── Security audits ───────────────────────────────────────────────────────
   security:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -67,5 +92,7 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: pnpm audit
-        run: pnpm audit || true
+        run: pnpm audit --audit-level moderate || true
