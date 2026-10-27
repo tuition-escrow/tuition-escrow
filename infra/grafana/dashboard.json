@@ -1,0 +1,103 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "annotations": { "list": [] },
+  "description": "Tuition Escrow — operational overview. README section: Operations and monitoring.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Indexer lag (ledgers behind tip)",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "indexer_lag_ledgers", "legendFormat": "Lag" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 200 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Latest ledger processed",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [{ "expr": "indexer_latest_ledger_processed", "legendFormat": "Ledger" }],
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 }
+    },
+    {
+      "id": 3,
+      "title": "Events processed (rate)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "rate(indexer_events_total[5m])", "legendFormat": "{{event_type}}" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }
+    },
+    {
+      "id": 4,
+      "title": "Indexer errors (rate)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "rate(indexer_errors_total[5m])", "legendFormat": "{{error_type}}" }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }
+    },
+    {
+      "id": 5,
+      "title": "Attestation outcomes",
+      "type": "piechart",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "attester_attestations_total", "legendFormat": "{{result}}" }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 }
+    },
+    {
+      "id": 6,
+      "title": "Failed confirmations (rate)",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        { "expr": "rate(attester_attestations_total{result='error'}[15m])", "legendFormat": "Errors/min" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.01 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 12 }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["tuition-escrow"],
+  "templating": { "list": [] },
+  "time": { "from": "now-3h", "to": "now" },
+  "title": "Tuition Escrow — Operations",
+  "uid": "tuition-escrow-ops",
+  "version": 1
+}

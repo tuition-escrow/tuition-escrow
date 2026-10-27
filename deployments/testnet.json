@@ -1,1 +1,7 @@
-{}
+{
+  "voucherContractId": "",
+  "deployLedger": 0,
+  "assetContractId": "",
+  "deployedAt": "",
+  "note": "Fill in after running scripts/deploy-testnet.sh"
+}

@@ -2,3 +2,4 @@ export * from './types';
 export * from './errors';
 export * from './validation';
 export * from './student-ref';
+export * from './sentry';

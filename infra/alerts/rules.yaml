@@ -1,0 +1,133 @@
+# Prometheus alert rules for Tuition Escrow.
+#
+# README section: "Operations and monitoring"
+#   Alert list from the README, implemented here.
+#
+# Load these rules into your Prometheus configuration:
+#   rule_files:
+#     - 'infra/alerts/rules.yaml'
+
+groups:
+  - name: tuition-escrow
+    interval: 60s
+    rules:
+
+      # ── Vouchers nearing expiry without confirmation ───────────────────
+      # README: "Vouchers approaching expiry without confirmation"
+      # This rule fires when there are Funded vouchers whose expiry is within
+      # 24 hours and attestation count is 0.
+      # NOTE: This requires a gauge exported by the API/indexer:
+      #   vouchers_nearing_expiry_unconfirmed — set by the expiry-reminders job.
+      - alert: VouchersNearingExpiryUnconfirmed
+        expr: vouchers_nearing_expiry_unconfirmed > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} voucher(s) nearing expiry with no attestation"
+          description: >
+            One or more Funded vouchers are within 24 hours of expiry and have
+            received no attestation. Check the attester service and notify funders.
+
+      # ── Voucher storage TTL near archival ─────────────────────────────
+      # README: "Vouchers whose storage TTL is within a safety margin of archival"
+      - alert: VoucherTtlNearArchival
+        expr: vouchers_ttl_near_archival > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} voucher(s) near Soroban storage archival"
+          description: >
+            One or more vouchers have not had their TTL extended recently.
+            The TTL extension job may be failing. Check the BullMQ worker.
+
+      # ── Failed / retried confirmations ───────────────────────────────
+      # README: "Failed or repeatedly retried `confirm` submissions"
+      - alert: AttesterConfirmErrors
+        expr: rate(attester_attestations_total{result="error"}[15m]) > 0.005
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Attester confirm submissions are failing"
+          description: >
+            The attester service is failing to submit confirm() transactions.
+            Check the attester logs and KMS connectivity.
+
+      # ── Indexer lag ───────────────────────────────────────────────────
+      # README: "Indexer lag behind the latest ledger"
+      - alert: IndexerLagHigh
+        expr: indexer_lag_ledgers > 200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Indexer is {{ $value }} ledgers behind the network tip"
+          description: >
+            The event indexer is significantly behind the network. Check RPC
+            connectivity and database write throughput.
+
+      - alert: IndexerLagCritical
+        expr: indexer_lag_ledgers > 1000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Indexer critically behind: {{ $value }} ledgers"
+          description: >
+            The indexer is critically behind. Voucher status in the API may be
+            stale. Investigate immediately.
+
+      # ── Attester service errors ───────────────────────────────────────
+      # README: "Attester service errors or unusual approval rates"
+      - alert: AttesterErrorRate
+        expr: rate(attester_attestations_total{result="error"}[5m]) > 0.01
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated attester error rate"
+          description: >
+            The attester service is logging errors at an elevated rate.
+            Check the attester service logs and key material health.
+
+      - alert: AttesterUnusualApprovalRate
+        expr: |
+          rate(attester_attestations_total{result="approved"}[1h])
+            / (rate(attester_attestations_total[1h]) + 0.001) < 0.1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Attester approval rate unusually low (<10%)"
+          description: >
+            The fraction of approved attestations has dropped below 10%.
+            This may indicate a provider misconfiguration or a school
+            records system outage.
+
+      # ── Fee-sponsor balance ───────────────────────────────────────────
+      # README: "Fee-sponsor account balance below threshold"
+      - alert: SponsorBalanceLow
+        expr: sponsor_xlm_balance_stroops < 10000000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fee-sponsor XLM balance critically low"
+          description: >
+            The fee-sponsor account has fewer than 1 XLM. New fund() and
+            extend_ttl() transactions will fail. Top up the sponsor account
+            immediately.
+
+      # ── Admin function invocation ────────────────────────────────────
+      # README: "Any admin-function invocation"
+      - alert: AdminFunctionInvoked
+        expr: increase(admin_function_invocations_total[5m]) > 0
+        labels:
+          severity: info
+        annotations:
+          summary: "Admin function invoked: {{ $labels.function }}"
+          description: >
+            An admin function was called on the voucher contract. Verify this
+            was an expected action by an authorized operator.
