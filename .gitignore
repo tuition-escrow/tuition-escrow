@@ -41,7 +41,6 @@ pnpm-debug.log*
 
 # Cache
 .cache
-Plan.md
 
 # Next.js PWA generated files
 apps/web/public/sw.js
