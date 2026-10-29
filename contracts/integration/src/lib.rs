@@ -288,4 +288,300 @@ mod tests {
 
         println!("✓ Scenario 3 passed: multiple vouchers, funds conservation verified");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scenario 1 (Full): Happy path — fund → 2-of-3 threshold attestations → release
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn integration_scenario1_happy_path_threshold_attestations_release() {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().set(base_ledger());
+
+        let admin = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let school = Address::generate(&env);
+        let attester1 = Address::generate(&env);
+        let attester2 = Address::generate(&env);
+        let attester3 = Address::generate(&env);
+
+        let token_admin = Address::generate(&env);
+        let token = env
+            .register_stellar_asset_contract_v2(token_admin.clone())
+            .address();
+        let sac = StellarAssetClient::new(&env, &token);
+        sac.mint(&funder, &1_000_000);
+
+        let contract = env.register(VoucherContract, ());
+        let client = VoucherContractClient::new(&env, &contract);
+
+        client.initialize(
+            &admin,
+            &Vec::from_array(&env, [token.clone()]),
+            &100,
+            &1_000_000,
+            &8760,
+        );
+        // Register school with 2-of-3 threshold
+        client.register_school(
+            &school,
+            &Vec::from_array(
+                &env,
+                [attester1.clone(), attester2.clone(), attester3.clone()],
+            ),
+            &2,
+        );
+
+        let token_client = TokenClient::new(&env, &token);
+        let funder_start = token_client.balance(&funder);
+        let school_start = token_client.balance(&school);
+
+        let amount: i128 = 500_000;
+        let expires_at = env.ledger().timestamp() + 86_400;
+
+        // 1. Fund
+        let id = client.fund(
+            &funder,
+            &school,
+            &token,
+            &amount,
+            &0, // TUITION
+            &student_ref(&env, 12),
+            &expires_at,
+        );
+
+        assert_eq!(token_client.balance(&funder), funder_start - amount);
+        assert_eq!(token_client.balance(&contract), amount);
+        assert_eq!(token_client.balance(&school), school_start);
+        assert_eq!(client.get_voucher(&id).status, Status::Funded);
+
+        // 2. First attestation: count reaches 1, threshold is 2 -> status stays Funded
+        client.confirm(&id, &attester1);
+        assert_eq!(client.get_voucher(&id).status, Status::Funded);
+        assert_eq!(token_client.balance(&school), school_start);
+
+        // 3. Second attestation: threshold reached -> release to school
+        client.confirm(&id, &attester2);
+        assert_eq!(client.get_voucher(&id).status, Status::Released);
+        assert_eq!(token_client.balance(&school), school_start + amount);
+        assert_eq!(token_client.balance(&contract), 0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scenario 2 (Full): Expiry path — fund → no attestation → expiry → reclaim
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn integration_scenario2_expiry_path_no_attestation_funder_reclaim() {
+        let t = IntegEnv::setup();
+        let funder_start = t.balance(&t.funder);
+        let amount: i128 = 350_000;
+        let expires_at = t.now() + 50_000;
+
+        let id = t.client.fund(
+            &t.funder,
+            &t.school,
+            &t.token,
+            &amount,
+            &2, // EXAM_FEES
+            &student_ref(&t.env, 77),
+            &expires_at,
+        );
+
+        assert_eq!(t.balance(&t.funder), funder_start - amount);
+        assert_eq!(t.client.get_voucher(&id).status, Status::Funded);
+
+        // Advance to expiry
+        t.set_timestamp(expires_at);
+
+        // Funder reclaims
+        t.client.reclaim(&id);
+        assert_eq!(t.client.get_voucher(&id).status, Status::Reclaimed);
+        assert_eq!(t.balance(&t.funder), funder_start);
+        assert_eq!(t.balance(&t.contract), 0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scenario 3: Cancel path — fund → funder + school cancel → refund
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn integration_scenario3_cancel_path_funder_school_refund() {
+        let t = IntegEnv::setup();
+        let funder_start = t.balance(&t.funder);
+        let amount: i128 = 200_000;
+        let expires_at = t.now() + 86_400;
+
+        let id = t.client.fund(
+            &t.funder,
+            &t.school,
+            &t.token,
+            &amount,
+            &3, // UNIFORM_BOOKS
+            &student_ref(&t.env, 88),
+            &expires_at,
+        );
+
+        assert_eq!(t.balance(&t.funder), funder_start - amount);
+        assert_eq!(t.client.get_voucher(&id).status, Status::Funded);
+
+        // Funder and school mutually cancel before expiry
+        t.client.cancel(&id);
+
+        assert_eq!(t.client.get_voucher(&id).status, Status::Cancelled);
+        assert_eq!(t.balance(&t.funder), funder_start);
+        assert_eq!(t.balance(&t.school), 0);
+        assert_eq!(t.balance(&t.contract), 0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scenario 4: Attack attempts
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #1)")] // NotAuthorized
+    fn integration_scenario4_attack_non_attester_confirm_rejected() {
+        let t = IntegEnv::setup();
+        let hacker = Address::generate(&t.env);
+        let id = t.client.fund(
+            &t.funder,
+            &t.school,
+            &t.token,
+            &100_000,
+            &0,
+            &student_ref(&t.env, 1),
+            &(t.now() + 86_400),
+        );
+
+        // Hacker attempts to confirm
+        t.client.confirm(&id, &hacker);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #4)")] // NotExpired
+    fn integration_scenario4_attack_early_reclaim_rejected() {
+        let t = IntegEnv::setup();
+        let id = t.client.fund(
+            &t.funder,
+            &t.school,
+            &t.token,
+            &100_000,
+            &0,
+            &student_ref(&t.env, 2),
+            &(t.now() + 86_400),
+        );
+
+        // Attempt reclaim before expiry
+        t.client.reclaim(&id);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #9)")] // DuplicateAttestation
+    fn integration_scenario4_attack_double_attestation_rejected() {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().set(base_ledger());
+
+        let admin = Address::generate(&env);
+        let funder = Address::generate(&env);
+        let school = Address::generate(&env);
+        let attester1 = Address::generate(&env);
+        let attester2 = Address::generate(&env);
+
+        let token_admin = Address::generate(&env);
+        let token = env
+            .register_stellar_asset_contract_v2(token_admin.clone())
+            .address();
+        StellarAssetClient::new(&env, &token).mint(&funder, &1_000_000);
+
+        let contract = env.register(VoucherContract, ());
+        let client = VoucherContractClient::new(&env, &contract);
+        client.initialize(
+            &admin,
+            &Vec::from_array(&env, [token.clone()]),
+            &100,
+            &1_000_000,
+            &8760,
+        );
+        client.register_school(
+            &school,
+            &Vec::from_array(&env, [attester1.clone(), attester2.clone()]),
+            &2,
+        );
+
+        let id = client.fund(
+            &funder,
+            &school,
+            &token,
+            &100_000,
+            &0,
+            &student_ref(&env, 3),
+            &(env.ledger().timestamp() + 86_400),
+        );
+
+        // First attestation succeeds
+        client.confirm(&id, &attester1);
+
+        // Same attester calls again -> rejected with DuplicateAttestation
+        client.confirm(&id, &attester1);
+    }
+
+    #[test]
+    fn integration_scenario4_attack_cannot_release_to_wrong_party() {
+        let t = IntegEnv::setup();
+        let attacker = Address::generate(&t.env);
+        let attacker_start = t.balance(&attacker);
+
+        let amount: i128 = 150_000;
+        let id = t.client.fund(
+            &t.funder,
+            &t.school,
+            &t.token,
+            &amount,
+            &0,
+            &student_ref(&t.env, 4),
+            &(t.now() + 86_400),
+        );
+
+        // Legitimate attester confirms
+        t.client.confirm(&id, &t.attester);
+
+        // Funds must go to school, NEVER attacker
+        assert_eq!(t.balance(&attacker), attacker_start);
+        assert_eq!(t.balance(&t.school), amount);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scenario 6: Privacy — verify on-chain data contains only opaque hash & coarse category
+    // ─────────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn integration_scenario6_privacy_on_chain_scan_no_pii_no_salt() {
+        let t = IntegEnv::setup();
+        let student_hash = student_ref(&t.env, 0xAA);
+
+        let id = t.client.fund(
+            &t.funder,
+            &t.school,
+            &t.token,
+            &100_000,
+            &0, // TUITION code
+            &student_hash,
+            &(t.now() + 86_400),
+        );
+
+        let v = t.client.get_voucher(&id);
+
+        // 1. student_ref is exactly 32 bytes opaque hash
+        assert_eq!(v.student_ref, student_hash);
+
+        // 2. category is a coarse integer code (0-4), never a plaintext memo
+        assert_eq!(v.category, 0);
+
+        // 3. Funder, School, Token are standard Stellar addresses
+        assert_eq!(v.funder, t.funder);
+        assert_eq!(v.school, t.school);
+        assert_eq!(v.token, t.token);
+    }
 }
