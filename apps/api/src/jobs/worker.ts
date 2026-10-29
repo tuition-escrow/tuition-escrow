@@ -20,17 +20,17 @@
  *     contract via the stub in jobs/ttl.ts (real impl deferred).
  */
 
-import { Worker, Queue, QueueScheduler } from 'bullmq';
-import { Pool } from 'pg';
-import { logger } from '../logger';
-import { runTtlExtensionJob } from './ttl';
-import { runExpiryRemindersJob } from './expiry';
+import { Worker, Queue } from "bullmq";
+import { Pool } from "pg";
+import { logger } from "../logger";
+import { runTtlExtensionJob } from "./ttl";
+import { runExpiryRemindersJob } from "./expiry";
 
 // ─── Job names ────────────────────────────────────────────────────────────
 
-export const JOB_TTL_EXTENSION = 'ttl-extension';
-export const JOB_EXPIRY_REMINDERS = 'expiry-reminders';
-export const QUEUE_NAME = 'background-jobs';
+export const JOB_TTL_EXTENSION = "ttl-extension";
+export const JOB_EXPIRY_REMINDERS = "expiry-reminders";
+export const QUEUE_NAME = "background-jobs";
 
 // ─── Schedule (cron) ──────────────────────────────────────────────────────
 
@@ -44,8 +44,8 @@ export const QUEUE_NAME = 'background-jobs';
  * Safety margin for expiry reminders: tiers 72h, 24h, 6h — see jobs/expiry.ts.
  */
 export const JOB_SCHEDULES: Record<string, string> = {
-  [JOB_TTL_EXTENSION]: '0 */6 * * *',
-  [JOB_EXPIRY_REMINDERS]: '0 * * * *',
+  [JOB_TTL_EXTENSION]: "0 */6 * * *",
+  [JOB_EXPIRY_REMINDERS]: "0 * * * *",
 };
 
 // ─── Worker factory ───────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ export function startJobWorker(pool: Pool, redisUrl: string): Worker {
   const worker = new Worker(
     QUEUE_NAME,
     async (job) => {
-      logger.info({ jobName: job.name, jobId: job.id }, 'Job started');
+      logger.info({ jobName: job.name, jobId: job.id }, "Job started");
 
       switch (job.name) {
         case JOB_TTL_EXTENSION:
@@ -66,10 +66,10 @@ export function startJobWorker(pool: Pool, redisUrl: string): Worker {
           await runExpiryRemindersJob(pool);
           break;
         default:
-          logger.warn({ jobName: job.name }, 'Unknown job name — skipping');
+          logger.warn({ jobName: job.name }, "Unknown job name — skipping");
       }
 
-      logger.info({ jobName: job.name, jobId: job.id }, 'Job completed');
+      logger.info({ jobName: job.name, jobId: job.id }, "Job completed");
     },
     {
       connection,
@@ -77,12 +77,12 @@ export function startJobWorker(pool: Pool, redisUrl: string): Worker {
     },
   );
 
-  worker.on('failed', (job, err) => {
-    logger.error({ jobName: job?.name, jobId: job?.id, err }, 'Job failed');
+  worker.on("failed", (job, err) => {
+    logger.error({ jobName: job?.name, jobId: job?.id, err }, "Job failed");
   });
 
-  worker.on('error', (err) => {
-    logger.error({ err }, 'Worker error');
+  worker.on("error", (err) => {
+    logger.error({ err }, "Worker error");
   });
 
   return worker;
@@ -101,7 +101,7 @@ export function startJobScheduler(redisUrl: string): void {
   const defaultJobOptions = {
     attempts: 3,
     backoff: {
-      type: 'exponential',
+      type: "exponential",
       delay: 1000,
     },
     removeOnComplete: 100,
@@ -109,19 +109,27 @@ export function startJobScheduler(redisUrl: string): void {
   };
 
   // Add repeatable jobs (idempotent — BullMQ deduplicates by key)
-  queue.add(JOB_TTL_EXTENSION, {}, {
-    ...defaultJobOptions,
-    repeat: { cron: JOB_SCHEDULES[JOB_TTL_EXTENSION] },
-    jobId: JOB_TTL_EXTENSION,
-  });
+  queue.add(
+    JOB_TTL_EXTENSION,
+    {},
+    {
+      ...defaultJobOptions,
+      repeat: { pattern: JOB_SCHEDULES[JOB_TTL_EXTENSION] },
+      jobId: JOB_TTL_EXTENSION,
+    },
+  );
 
-  queue.add(JOB_EXPIRY_REMINDERS, {}, {
-    ...defaultJobOptions,
-    repeat: { cron: JOB_SCHEDULES[JOB_EXPIRY_REMINDERS] },
-    jobId: JOB_EXPIRY_REMINDERS,
-  });
+  queue.add(
+    JOB_EXPIRY_REMINDERS,
+    {},
+    {
+      ...defaultJobOptions,
+      repeat: { pattern: JOB_SCHEDULES[JOB_EXPIRY_REMINDERS] },
+      jobId: JOB_EXPIRY_REMINDERS,
+    },
+  );
 
-  logger.info({ schedules: JOB_SCHEDULES }, 'Job scheduler started');
+  logger.info({ schedules: JOB_SCHEDULES }, "Job scheduler started");
 }
 
 // ─── Entry point (called from apps/api/src/index.ts) ─────────────────────
@@ -129,11 +137,11 @@ export function startJobScheduler(redisUrl: string): void {
 export function initJobs(pool: Pool): void {
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl) {
-    logger.warn('REDIS_URL not set — background jobs will not start');
+    logger.warn("REDIS_URL not set — background jobs will not start");
     return;
   }
 
   startJobScheduler(redisUrl);
   startJobWorker(pool, redisUrl);
-  logger.info('Background jobs initialized');
+  logger.info("Background jobs initialized");
 }

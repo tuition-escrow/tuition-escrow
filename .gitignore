@@ -41,7 +41,13 @@ pnpm-debug.log*
 
 # Cache
 .cache
-Plan.md
+
+# Next.js PWA generated files
+apps/web/public/sw.js
+apps/web/public/workbox-*.js
+apps/web/next-env.d.ts
+test-results/
+playwright-report/
 
 # Soroban test snapshots (deterministic but large; regenerated on each run)
 **/test_snapshots/

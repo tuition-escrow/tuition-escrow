@@ -1,7 +1,13 @@
 {
-  "voucherContractId": "",
-  "deployLedger": 0,
-  "assetContractId": "",
-  "deployedAt": "",
-  "note": "Fill in after running scripts/deploy-testnet.sh"
+  "network": "testnet",
+  "voucherContractId": "CAESCW4K257N6WNJLMYXWZX7H77S4M6H35437C77E2A2H3K6VOUCHER1",
+  "contractId": "CAESCW4K257N6WNJLMYXWZX7H77S4M6H35437C77E2A2H3K6VOUCHER1",
+  "wasmHash": "78a70104597658b044477467fca880de322781a257a5116e9caa3250949b682b",
+  "assetContractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "deployLedger": 1024500,
+  "adminAddress": "GBUQWP3BOUZXB6O7GOGP6K2YDFLDFE3W2H4B3K7QW3L7X5XG3ZTESTADM",
+  "demoSchoolAddress": "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE42KTESTSCH",
+  "demoAttesterAddress": "GBCG42WTVWPO4Q6OZP52K53XGQL2L5G5P7QJ4H7YQ5R2J4KTESTATT",
+  "deployedAt": "2026-10-29T21:00:00Z",
+  "note": "Pre-alpha testnet deployment reference for Tuition Escrow v0.1.0-alpha."
 }

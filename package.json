@@ -12,6 +12,7 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "test:e2e": "pnpm --filter @tuition-escrow/web test:e2e && cargo test -p integration",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "bindings": "turbo run bindings",
     "db:migrate": "pnpm --filter @tuition-escrow/api db:migrate",

@@ -16,17 +16,17 @@
  *   - No free-text memo fields.
  */
 
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/providers/AuthProvider';
-import { listVouchers, getVoucherMapping, type VoucherRow } from '@/lib/api';
-import { StatusBadge } from '@/components/ui/StatusBadge';
-import { AmountDisplay } from '@/components/ui/AmountDisplay';
-import { AddressDisplay } from '@/components/ui/AddressDisplay';
-import { ErrorDisplay } from '@/components/ui/ErrorDisplay';
-import { VoucherStatus } from '@tuition-escrow/shared';
-import { categoryLabel } from '@/lib/categories';
+import React, { useEffect, useState } from "react";
+import { useAuth } from "@/providers/AuthProvider";
+import { listVouchers, getVoucherMapping, type VoucherRow } from "@/lib/api";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { AmountDisplay } from "@/components/ui/AmountDisplay";
+import { AddressDisplay } from "@/components/ui/AddressDisplay";
+import { ErrorDisplay } from "@/components/ui/ErrorDisplay";
+import { VoucherStatus } from "@tuition-escrow/shared";
+import { categoryLabel } from "@/lib/categories";
 
 // ─── Mapping reveal (school-only) ────────────────────────────────────────
 
@@ -38,7 +38,9 @@ function MappingReveal({
   schoolId: string;
 }) {
   const { token } = useAuth();
-  const [mapping, setMapping] = useState<{ studentIdentifier: string } | null>(null);
+  const [mapping, setMapping] = useState<{ studentIdentifier: string } | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,7 +52,7 @@ function MappingReveal({
       const resp = await getVoucherMapping(token, schoolId, voucherId);
       setMapping({ studentIdentifier: resp.mapping.studentIdentifier });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load mapping');
+      setError(e instanceof Error ? e.message : "Failed to load mapping");
     } finally {
       setLoading(false);
     }
@@ -61,7 +63,9 @@ function MappingReveal({
   if (mapping) {
     return (
       <div className="mt-2 rounded-md bg-yellow-50 border border-yellow-200 px-3 py-2 text-sm">
-        <p className="text-yellow-800 font-medium mb-1">Student reference (school only)</p>
+        <p className="text-yellow-800 font-medium mb-1">
+          Student reference (school only)
+        </p>
         <p className="font-mono text-yellow-900">{mapping.studentIdentifier}</p>
         <button
           onClick={handleHide}
@@ -82,7 +86,7 @@ function MappingReveal({
         className="rounded-md border border-yellow-400 bg-yellow-50 px-3 py-1.5 text-xs font-medium text-yellow-800 hover:bg-yellow-100 disabled:opacity-50 focus-visible:ring-2 focus:outline-none"
         aria-label={`Reveal student mapping for voucher ${voucherId}`}
       >
-        {loading ? 'Loading…' : 'Reveal student'}
+        {loading ? "Loading…" : "Reveal student"}
       </button>
     </div>
   );
@@ -105,7 +109,10 @@ function SchoolVoucherCard({
       aria-labelledby={`school-voucher-${v.voucher_id}`}
     >
       <div className="flex items-start justify-between gap-2 flex-wrap">
-        <h3 id={`school-voucher-${v.voucher_id}`} className="font-semibold text-sm">
+        <h3
+          id={`school-voucher-${v.voucher_id}`}
+          className="font-semibold text-sm"
+        >
           Voucher #{v.voucher_id}
         </h3>
         <StatusBadge status={status} />
@@ -113,10 +120,14 @@ function SchoolVoucherCard({
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
         <dt className="text-gray-500">Funder</dt>
-        <dd><AddressDisplay address={v.funder} /></dd>
+        <dd>
+          <AddressDisplay address={v.funder} />
+        </dd>
 
         <dt className="text-gray-500">Amount</dt>
-        <dd><AmountDisplay amount={BigInt(v.amount)} /></dd>
+        <dd>
+          <AmountDisplay amount={BigInt(v.amount)} />
+        </dd>
 
         <dt className="text-gray-500">Category</dt>
         <dd>{categoryLabel(v.category)}</dd>
@@ -136,14 +147,17 @@ function SchoolVoucherCard({
 export function SchoolDashboard() {
   const { token, user } = useAuth();
   const [vouchers, setVouchers] = useState<VoucherRow[]>([]);
-  const [filter, setFilter] = useState<VoucherStatus | 'all'>('all');
+  const [filter, setFilter] = useState<VoucherStatus | "all">("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const schoolId = user?.schoolId ?? '';
+  const schoolId = user?.schoolId ?? "";
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     listVouchers(token)
       .then(setVouchers)
       .catch((e) => setError(e.message))
@@ -151,12 +165,10 @@ export function SchoolDashboard() {
   }, [token]);
 
   const filtered =
-    filter === 'all'
-      ? vouchers
-      : vouchers.filter((v) => v.status === filter);
+    filter === "all" ? vouchers : vouchers.filter((v) => v.status === filter);
 
-  const statuses: (VoucherStatus | 'all')[] = [
-    'all',
+  const statuses: (VoucherStatus | "all")[] = [
+    "all",
     VoucherStatus.Funded,
     VoucherStatus.Released,
     VoucherStatus.Reclaimed,
@@ -172,14 +184,22 @@ export function SchoolDashboard() {
       {/* Payout address */}
       <div className="mb-4 rounded-md border border-gray-200 bg-white px-4 py-3 text-sm">
         <span className="text-gray-500 mr-2">Payout address:</span>
-        <AddressDisplay address={user?.stellarAddress ?? '—'} />
+        <AddressDisplay address={user?.stellarAddress ?? "—"} />
+      </div>
+
+      {/* Student mapping privacy notice */}
+      <div className="mb-4 rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+        <span className="font-medium">Student mapping:</span> School-only view.
+        Vouchers identify students via private off-chain mapping.
       </div>
 
       {/* Off-ramp placeholder */}
       <div className="mb-6 rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-500">
-        <span className="font-medium text-gray-700">Anchor integration planned</span>
-        {' '}— withdraw funds to a local bank account or mobile wallet via a
-        Stellar anchor (SEP-24/SEP-31). Not yet functional in this release.
+        <span className="font-medium text-gray-700">
+          Anchor integration planned
+        </span>{" "}
+        — withdraw funds to a local bank account or mobile wallet via a Stellar
+        anchor (SEP-24/SEP-31). Not yet functional in this release.
       </div>
 
       <ErrorDisplay error={error} />
@@ -197,11 +217,11 @@ export function SchoolDashboard() {
             aria-pressed={filter === s}
             className={`rounded-full px-3 py-1 text-xs font-medium border focus-visible:ring-2 focus:outline-none ${
               filter === s
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                ? "bg-blue-600 text-white border-blue-600"
+                : "border-gray-300 text-gray-600 hover:bg-gray-50"
             }`}
           >
-            {s === 'all' ? 'All' : s}
+            {s === "all" ? "All" : s}
           </button>
         ))}
       </div>
