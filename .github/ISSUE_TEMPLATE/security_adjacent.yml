@@ -1,0 +1,40 @@
+name: Security-Adjacent Change Request
+description: Request or propose architectural, cryptographic, or permission modifications that affect system security boundaries
+labels: ["security", "governance"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for public design proposals involving cryptographic primitives, role permissions, attester quorum policies, or KMS integrations.
+        **Do NOT report active, exploitable vulnerabilities here.** Use [SECURITY.md](../../SECURITY.md) instead.
+  - type: input
+    id: sensitive_area
+    attributes:
+      label: Sensitive Area Affected
+      description: Indicate which protected component is impacted.
+      placeholder: "e.g., contracts/, apps/attester/, apps/api/src/kms/, apps/api/src/middleware/"
+    validations:
+      required: true
+  - type: textarea
+    id: security_rationale
+    attributes:
+      label: Security Rationale
+      description: Why is this modification necessary and what threat vector does it address or introduce?
+    validations:
+      required: true
+  - type: textarea
+    id: threat_model_analysis
+    attributes:
+      label: Threat Model Impact
+      description: Analyze how this impacts the Trust Boundaries defined in docs/architecture.md and README.md.
+    validations:
+      required: true
+  - type: checkboxes
+    id: approval_notice
+    attributes:
+      label: Governance Compliance
+      options:
+        - label: I acknowledge that any pull request implementing this change requires two independent code approvals.
+          required: true
+        - label: I confirm this change will include regression and invariant test suites.
+          required: true
