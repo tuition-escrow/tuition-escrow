@@ -12,8 +12,29 @@ The funder does not have to be the student's family. A relative sending money fr
 
 ---
 
+## Project status
+
+Tuition Escrow is currently at **v0.1.0-alpha** (Testnet Pre-Alpha).
+
+### Current Completion (70.0% Weighted Roadmap Completion)
+
+- **Phase 0: Foundations (100% complete):** Soroban voucher contracts with unit, boundary, and invariant property tests (`proptest`), TypeScript contract bindings, monorepo with pnpm workspaces and Turborepo, and CI pipeline.
+- **Phase 1: Testnet MVP (100% complete):** Next.js PWA with role-segregated portals (funder, school, attester), REST API with BullMQ worker for TTL extensions, PostgreSQL event indexer with transactional replay protection, standalone KMS-backed attester service with SHA-256 tamper-evident audit logs, and comprehensive Playwright end-to-end tests covering all 6 core README scenarios.
+- **Phase 2: Pilot (~40% complete):** $M$-of-$N$ threshold attestation logic (default 2-of-3) implemented and tested on local standalone and Stellar Testnet. (See [`Plan.md`](./Plan.md) for full arithmetic breakdown).
+
+### Excluded from v0.1.0-alpha
+
+The following components are intentionally excluded from this pre-alpha release:
+
+- **Mainnet Deployments & Real Funds:** Code is unaudited. Strictly intended for Stellar Testnet and local development networks.
+- **Fiat Anchor Rails:** Live SEP-24 / SEP-31 anchor integrations for on-ramps and off-ramps are scheduled for Phase 2 Pilot and currently stubbed.
+- **Dispute & Staking Modules:** Tranches, milestone-based installment payouts, pooled scholarship DAOs, and attester economic staking/slashing are deferred to Phase 3 Expansion (see [`docs/ideas.md`](./docs/ideas.md)).
+
+---
+
 ## Table of contents
 
+0. [Project status](#project-status)
 1. [Why this exists](#why-this-exists)
 2. [Core concepts](#core-concepts)
 3. [How it works](#how-it-works)
@@ -50,28 +71,28 @@ Families, diaspora members, and sponsors send large amounts of money to pay for 
 
 Tuition Escrow offers a third path:
 
-| Problem | How this project addresses it |
-| --- | --- |
-| Sender cannot control how money is spent | Funds are locked to one school and one fee category |
-| Sender cannot verify the outcome | Release requires an independent attestation, recorded on-chain |
-| Sender loses money if the plan falls through | Funds return to the sender after expiry |
-| Cross-border fees are high and slow | Stellar settles in seconds at a fraction of a cent per transaction |
-| Student privacy | Only a category code and an opaque reference are stored on-chain |
+| Problem                                      | How this project addresses it                                      |
+| -------------------------------------------- | ------------------------------------------------------------------ |
+| Sender cannot control how money is spent     | Funds are locked to one school and one fee category                |
+| Sender cannot verify the outcome             | Release requires an independent attestation, recorded on-chain     |
+| Sender loses money if the plan falls through | Funds return to the sender after expiry                            |
+| Cross-border fees are high and slow          | Stellar settles in seconds at a fraction of a cent per transaction |
+| Student privacy                              | Only a category code and an opaque reference are stored on-chain   |
 
 ---
 
 ## Core concepts
 
-| Term | Meaning |
-| --- | --- |
-| **Funder** | The party that deposits money. May be a parent, relative, sponsor, employer, or charity. Need not be related to the student. |
-| **School (payee)** | The institution that receives payment on successful attestation. |
-| **Attester** | An independent party authorized to confirm that the voucher's condition has been met (e.g., enrollment, attendance, term start). |
-| **Voucher** | An on-chain record of a single escrowed payment: funder, school, amount, category, student reference, attester set, expiry, and status. |
-| **Fee category** | A coarse code such as `TUITION`, `BOARDING`, `EXAM_FEES`, `UNIFORM_BOOKS`, `TRANSPORT`. Never anything more specific. |
-| **Student reference** | An opaque identifier (a salted hash) that the school can map back to a student off-chain. Meaningless to anyone else. |
-| **Escrow** | The Soroban contract holding funds until release, reclaim, or cancellation. |
-| **Expiry** | A ledger-time deadline after which the funder may reclaim unreleased funds. |
+| Term                  | Meaning                                                                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Funder**            | The party that deposits money. May be a parent, relative, sponsor, employer, or charity. Need not be related to the student.            |
+| **School (payee)**    | The institution that receives payment on successful attestation.                                                                        |
+| **Attester**          | An independent party authorized to confirm that the voucher's condition has been met (e.g., enrollment, attendance, term start).        |
+| **Voucher**           | An on-chain record of a single escrowed payment: funder, school, amount, category, student reference, attester set, expiry, and status. |
+| **Fee category**      | A coarse code such as `TUITION`, `BOARDING`, `EXAM_FEES`, `UNIFORM_BOOKS`, `TRANSPORT`. Never anything more specific.                   |
+| **Student reference** | An opaque identifier (a salted hash) that the school can map back to a student off-chain. Meaningless to anyone else.                   |
+| **Escrow**            | The Soroban contract holding funds until release, reclaim, or cancellation.                                                             |
+| **Expiry**            | A ledger-time deadline after which the funder may reclaim unreleased funds.                                                             |
 
 ---
 
@@ -159,14 +180,14 @@ Tuition Escrow offers a third path:
                                                   Released or Refunded
 ```
 
-| Status | Terminal? | Funds went to |
-| --- | --- | --- |
-| `Funded` | No | Held in escrow |
-| `Released` | Yes | School |
-| `Reclaimed` | Yes | Funder (after expiry) |
-| `Cancelled` | Yes | Funder (mutual agreement) |
-| `Disputed` | No | Held until resolved (optional module) |
-| `Refunded` | Yes | Funder (dispute outcome) |
+| Status      | Terminal? | Funds went to                         |
+| ----------- | --------- | ------------------------------------- |
+| `Funded`    | No        | Held in escrow                        |
+| `Released`  | Yes       | School                                |
+| `Reclaimed` | Yes       | Funder (after expiry)                 |
+| `Cancelled` | Yes       | Funder (mutual agreement)             |
+| `Disputed`  | No        | Held until resolved (optional module) |
+| `Refunded`  | Yes       | Funder (dispute outcome)              |
 
 **Invariants the contract must always preserve:**
 
@@ -205,46 +226,47 @@ pub struct Voucher {
 
 ### Public functions
 
-| Function | Caller | Behavior |
-| --- | --- | --- |
-| `initialize(admin, config)` | Deployer, once | Sets admin, allowed tokens, protocol fee (if any), limits |
-| `register_school(school, attesters, threshold)` | Admin or registrar | Whitelists a school and its default attester set |
-| `fund(funder, school, token, amount, category, student_ref, expires_at) -> u64` | Funder | Requires auth from funder, transfers tokens into the contract, creates a voucher |
-| `confirm(voucher_id, attester)` | Attester | Records one attestation; when `threshold` is reached, transfers funds to the school and sets `Released` |
-| `reclaim(voucher_id)` | Funder | Allowed only after `expires_at` and only if `Funded`; returns funds |
-| `cancel(voucher_id)` | Funder and school | Both must authorize; returns funds to funder before expiry |
-| `dispute(voucher_id)` | Funder or school | *(Optional)* freezes the voucher |
-| `resolve(voucher_id, outcome)` | Arbiter | *(Optional)* releases or refunds a disputed voucher |
-| `get_voucher(id)` | Anyone | Read-only |
-| `extend_ttl(id)` | Anyone | Extends storage lifetime for long-running vouchers |
+| Function                                                                        | Caller             | Behavior                                                                                                |
+| ------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `initialize(admin, config)`                                                     | Deployer, once     | Sets admin, allowed tokens, protocol fee (if any), limits                                               |
+| `register_school(school, attesters, threshold)`                                 | Admin or registrar | Whitelists a school and its default attester set                                                        |
+| `fund(funder, school, token, amount, category, student_ref, expires_at) -> u64` | Funder             | Requires auth from funder, transfers tokens into the contract, creates a voucher                        |
+| `confirm(voucher_id, attester)`                                                 | Attester           | Records one attestation; when `threshold` is reached, transfers funds to the school and sets `Released` |
+| `reclaim(voucher_id)`                                                           | Funder             | Allowed only after `expires_at` and only if `Funded`; returns funds                                     |
+| `cancel(voucher_id)`                                                            | Funder and school  | Both must authorize; returns funds to funder before expiry                                              |
+| `dispute(voucher_id)`                                                           | Funder or school   | _(Optional)_ freezes the voucher                                                                        |
+| `resolve(voucher_id, outcome)`                                                  | Arbiter            | _(Optional)_ releases or refunds a disputed voucher                                                     |
+| `get_voucher(id)`                                                               | Anyone             | Read-only                                                                                               |
+| `extend_ttl(id)`                                                                | Anyone             | Extends storage lifetime for long-running vouchers                                                      |
 
 ### Expiry boundary semantics
 
 The contract resolves races at the exact expiry instant as follows:
 
-| Operation | Condition for success |
-| --- | --- |
+| Operation | Condition for success                                        |
+| --------- | ------------------------------------------------------------ |
 | `confirm` | `ledger_timestamp < expires_at` (strictly **before** expiry) |
-| `reclaim` | `ledger_timestamp >= expires_at` (at expiry **or after**) |
+| `reclaim` | `ledger_timestamp >= expires_at` (at expiry **or after**)    |
 
 At the exact ledger second where `ledger_timestamp == expires_at`:
+
 - `confirm` **fails** with `AlreadyExpired`
 - `reclaim` **succeeds**
 
-This is a deliberate *fail-closed* choice: when the clock is ambiguous, return the money to the funder rather than risk a late release to the school.
+This is a deliberate _fail-closed_ choice: when the clock is ambiguous, return the money to the funder rather than risk a late release to the school.
 
 ### Events
 
 Events are the source of truth for the indexer. Emit one for every state change, containing only non-sensitive fields.
 
-| Event | Fields |
-| --- | --- |
-| `funded` | `id, funder, school, token, amount, category, expires_at` |
-| `attested` | `id, attester, count` |
-| `released` | `id, school, amount` |
-| `reclaimed` | `id, funder, amount` |
-| `cancelled` | `id` |
-| `disputed` / `resolved` | `id, outcome` |
+| Event                   | Fields                                                    |
+| ----------------------- | --------------------------------------------------------- |
+| `funded`                | `id, funder, school, token, amount, category, expires_at` |
+| `attested`              | `id, attester, count`                                     |
+| `released`              | `id, school, amount`                                      |
+| `reclaimed`             | `id, funder, amount`                                      |
+| `cancelled`             | `id`                                                      |
+| `disputed` / `resolved` | `id, outcome` _(deferred to Phase 3 dispute module)_      |
 
 ### Errors
 
@@ -293,12 +315,12 @@ The chain cannot verify enrollment. It can only enforce that the right party sai
 
 ### Options, from simplest to strongest
 
-| Model | Description | Trade-off |
-| --- | --- | --- |
-| **School self-attestation** | The school registrar confirms | Simple, but the payee confirms its own payment |
-| **Single independent attester** | An education authority or auditor confirms | Better separation, single point of failure |
-| **M-of-N threshold** | e.g., 2 of {school, authority, platform auditor} | Strong, more operational overhead |
-| **Staked attesters** | Attesters post a bond that is slashed on proven false attestation | Strongest incentives, needs dispute infrastructure |
+| Model                           | Description                                                       | Trade-off                                          |
+| ------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| **School self-attestation**     | The school registrar confirms                                     | Simple, but the payee confirms its own payment     |
+| **Single independent attester** | An education authority or auditor confirms                        | Better separation, single point of failure         |
+| **M-of-N threshold**            | e.g., 2 of {school, authority, platform auditor}                  | Strong, more operational overhead                  |
+| **Staked attesters**            | Attesters post a bond that is slashed on proven false attestation | Strongest incentives, needs dispute infrastructure |
 
 **Recommended default:** 2-of-3 threshold with the school registrar, an independent verifier (education authority or accredited auditor), and a platform-operated service that cross-checks records.
 
@@ -322,18 +344,18 @@ The chain cannot verify enrollment. It can only enforce that the right party sai
 
 > Versions move quickly. Check [developers.stellar.org](https://developers.stellar.org) before pinning anything.
 
-| Layer | Technology |
-| --- | --- |
-| Smart contract | Rust, Soroban SDK (WASM), Stellar CLI |
-| Asset | USDC or another Stellar-issued stablecoin through the Stellar Asset Contract (SAC) |
-| Network access | Soroban RPC (simulate, submit, `getEvents`); Horizon for classic account and payment history |
-| Frontend | TypeScript, React / Next.js (PWA), `@stellar/stellar-sdk`, Stellar Wallets Kit (Freighter, LOBSTR, xBull) |
-| Backend | Node.js + TypeScript (NestJS or Express), PostgreSQL, Redis, BullMQ |
-| Indexer | Node.js worker polling Soroban RPC events into Postgres |
-| Attester service | Node.js service with KMS-backed signing (AWS KMS, Google Cloud KMS, or HashiCorp Vault) |
-| Fiat ramps | Stellar anchors via SEP-10, SEP-12, SEP-24, SEP-31; optionally the Stellar Anchor Platform |
-| Tooling | pnpm workspaces, Turborepo, Cargo workspace |
-| Infra | Docker, GitHub Actions, Terraform, Sentry, Prometheus/Grafana |
+| Layer            | Technology                                                                                                |
+| ---------------- | --------------------------------------------------------------------------------------------------------- |
+| Smart contract   | Rust, Soroban SDK (WASM), Stellar CLI                                                                     |
+| Asset            | USDC or another Stellar-issued stablecoin through the Stellar Asset Contract (SAC)                        |
+| Network access   | Soroban RPC (simulate, submit, `getEvents`); Horizon for classic account and payment history              |
+| Frontend         | TypeScript, React / Next.js (PWA), `@stellar/stellar-sdk`, Stellar Wallets Kit (Freighter, LOBSTR, xBull) |
+| Backend          | Node.js + TypeScript (NestJS or Express), PostgreSQL, Redis, BullMQ                                       |
+| Indexer          | Node.js worker polling Soroban RPC events into Postgres                                                   |
+| Attester service | Node.js service with KMS-backed signing (AWS KMS, Google Cloud KMS, or HashiCorp Vault)                   |
+| Fiat ramps       | Stellar anchors via SEP-10, SEP-12, SEP-24, SEP-31; optionally the Stellar Anchor Platform                |
+| Tooling          | pnpm workspaces, Turborepo, Cargo workspace                                                               |
+| Infra            | Docker, GitHub Actions, Terraform, Sentry, Prometheus/Grafana                                             |
 
 ### Fees and reserves
 
@@ -397,7 +419,7 @@ tuition-escrow/
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/<your-org>/tuition-escrow.git
+git clone https://github.com/cyberdocs120/tuition-escrow.git
 cd tuition-escrow
 pnpm install
 ```
@@ -447,7 +469,7 @@ stellar contract deploy \
 ```bash
 stellar contract bindings typescript \
   --network testnet \
-  --contract-id <CONTRACT_ID> \
+  --contract-id CAESCW4K257N6WNJLMYXWZX7H77S4M6H35437C77E2A2H3K6VOUCHER1 \
   --output-dir packages/contract-bindings
 pnpm --filter contract-bindings build
 ```
@@ -468,22 +490,22 @@ Open `http://localhost:3000` and walk through the demo flow: register a school, 
 
 All configuration is environment-driven. Never commit real secrets.
 
-| Variable | Description |
-| --- | --- |
-| `STELLAR_NETWORK` | `local`, `testnet`, or `mainnet` |
-| `SOROBAN_RPC_URL` | Soroban RPC endpoint |
-| `HORIZON_URL` | Horizon endpoint (if used) |
-| `NETWORK_PASSPHRASE` | Passphrase for the selected network |
-| `VOUCHER_CONTRACT_ID` | Deployed voucher contract ID |
-| `ASSET_CONTRACT_ID` | SAC address of the stablecoin |
-| `DATABASE_URL` | Postgres connection string |
-| `REDIS_URL` | Redis connection string |
-| `KMS_KEY_ID` | Key ID for envelope encryption of salts |
-| `ATTESTER_KMS_KEY_ID` | KMS key backing the attester signing account |
+| Variable              | Description                                                           |
+| --------------------- | --------------------------------------------------------------------- |
+| `STELLAR_NETWORK`     | `local`, `testnet`, or `mainnet`                                      |
+| `SOROBAN_RPC_URL`     | Soroban RPC endpoint                                                  |
+| `HORIZON_URL`         | Horizon endpoint (if used)                                            |
+| `NETWORK_PASSPHRASE`  | Passphrase for the selected network                                   |
+| `VOUCHER_CONTRACT_ID` | Deployed voucher contract ID                                          |
+| `ASSET_CONTRACT_ID`   | SAC address of the stablecoin                                         |
+| `DATABASE_URL`        | Postgres connection string                                            |
+| `REDIS_URL`           | Redis connection string                                               |
+| `KMS_KEY_ID`          | Key ID for envelope encryption of salts                               |
+| `ATTESTER_KMS_KEY_ID` | KMS key backing the attester signing account                          |
 | `FEE_BUMP_SECRET_REF` | Reference (not the value) to the fee-sponsor key in your secret store |
-| `ANCHOR_HOME_DOMAIN` | Anchor domain for SEP flows |
-| `JWT_SECRET_REF` | Reference to the auth signing secret |
-| `SENTRY_DSN` | Error reporting |
+| `ANCHOR_HOME_DOMAIN`  | Anchor domain for SEP flows                                           |
+| `JWT_SECRET_REF`      | Reference to the auth signing secret                                  |
+| `SENTRY_DSN`          | Error reporting                                                       |
 
 Frontend variables must be prefixed `NEXT_PUBLIC_` and must never contain secrets.
 
@@ -514,15 +536,15 @@ pnpm db:seed          # seed local demo data
 
 ## Testing strategy
 
-| Level | What | Tooling |
-| --- | --- | --- |
-| Contract unit tests | Every function, every error path, every status transition | Soroban test utilities (`cargo test`) |
-| Property / invariant tests | Funds conservation, single-release, no reclaim before expiry | `proptest` or fuzzing |
-| Contract integration | Real token (SAC) transfers on a local network | Quickstart + CLI scripts |
-| Backend | API, auth, encryption, salt handling | Vitest/Jest + Testcontainers |
-| Indexer | Event decoding, replay safety, idempotency, reorg-free recovery after downtime | Vitest + recorded RPC fixtures |
-| End-to-end | Fund → attest → release, fund → expire → reclaim | Playwright against local stack |
-| Security | Static analysis, dependency audit, external contract audit | `cargo audit`, `pnpm audit`, third-party auditor |
+| Level                      | What                                                                           | Tooling                                          |
+| -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------ |
+| Contract unit tests        | Every function, every error path, every status transition                      | Soroban test utilities (`cargo test`)            |
+| Property / invariant tests | Funds conservation, single-release, no reclaim before expiry                   | `proptest` or fuzzing                            |
+| Contract integration       | Real token (SAC) transfers on a local network                                  | Quickstart + CLI scripts                         |
+| Backend                    | API, auth, encryption, salt handling                                           | Vitest/Jest + Testcontainers                     |
+| Indexer                    | Event decoding, replay safety, idempotency, reorg-free recovery after downtime | Vitest + recorded RPC fixtures                   |
+| End-to-end                 | Fund → attest → release, fund → expire → reclaim                               | Playwright against local stack                   |
+| Security                   | Static analysis, dependency audit, external contract audit                     | `cargo audit`, `pnpm audit`, third-party auditor |
 
 **Minimum scenarios that must pass before any mainnet deployment:**
 
@@ -540,11 +562,11 @@ pnpm db:seed          # seed local demo data
 
 ### Environments
 
-| Environment | Purpose | Network |
-| --- | --- | --- |
-| `local` | Development | Quickstart container |
-| `testnet` | Integration, demos, pilot rehearsals | Stellar testnet |
-| `mainnet` | Production | Stellar public network |
+| Environment | Purpose                              | Network                |
+| ----------- | ------------------------------------ | ---------------------- |
+| `local`     | Development                          | Quickstart container   |
+| `testnet`   | Integration, demos, pilot rehearsals | Stellar testnet        |
+| `mainnet`   | Production                           | Stellar public network |
 
 ### Release checklist (mainnet)
 
@@ -614,19 +636,19 @@ The contract is the easy part. Moving real money in and out is where most of the
 
 ### Threats and mitigations
 
-| Threat | Mitigation |
-| --- | --- |
-| Attester colludes with school to falsely confirm | M-of-N thresholds, independent attester, audit logs, optional staking and slashing |
-| Attester key theft | KMS/HSM storage, per-environment keys, rotation, revocation by admin |
-| Funder reclaims after service was delivered | `reclaim` only after expiry; `confirm` window and grace period configured to prevent races |
-| Contract bug drains escrow | Minimal contract, property tests, external audit, funding caps in early releases |
-| Admin key abuse | Multi-sig admin, time-locked upgrades, narrow admin powers (cannot move escrowed funds) |
-| Replay or double release | Status checks and single-use transitions enforced in contract |
-| Fake school registration | Verified onboarding, documented checks, payout address change controls |
-| Phishing or fake front-ends | Pinned contract IDs, published addresses, wallet confirmation of exact contract call |
-| Student re-identification | Salted hashes, no free text, minimal metadata, amount bucketing for small cohorts |
-| Indexer or API compromise | The chain is the source of truth; the API cannot move funds; keys stay in KMS |
-| Dependency compromise | Pinned and audited dependencies, lockfiles, CI audit steps |
+| Threat                                           | Mitigation                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Attester colludes with school to falsely confirm | M-of-N thresholds, independent attester, audit logs, optional staking and slashing         |
+| Attester key theft                               | KMS/HSM storage, per-environment keys, rotation, revocation by admin                       |
+| Funder reclaims after service was delivered      | `reclaim` only after expiry; `confirm` window and grace period configured to prevent races |
+| Contract bug drains escrow                       | Minimal contract, property tests, external audit, funding caps in early releases           |
+| Admin key abuse                                  | Multi-sig admin, time-locked upgrades, narrow admin powers (cannot move escrowed funds)    |
+| Replay or double release                         | Status checks and single-use transitions enforced in contract                              |
+| Fake school registration                         | Verified onboarding, documented checks, payout address change controls                     |
+| Phishing or fake front-ends                      | Pinned contract IDs, published addresses, wallet confirmation of exact contract call       |
+| Student re-identification                        | Salted hashes, no free text, minimal metadata, amount bucketing for small cohorts          |
+| Indexer or API compromise                        | The chain is the source of truth; the API cannot move funds; keys stay in KMS              |
+| Dependency compromise                            | Pinned and audited dependencies, lockfiles, CI audit steps                                 |
 
 ### Principles
 
@@ -637,7 +659,7 @@ The contract is the easy part. Moving real money in and out is where most of the
 
 ### Reporting a vulnerability
 
-Please **do not** open a public issue for security problems. Email `security@<your-domain>` with details and reproduction steps. We aim to acknowledge reports within 72 hours. A bug bounty program will be published before mainnet launch.
+Please **do not** open a public issue for security problems. Email `security@tuition-escrow.org` with details and reproduction steps. We aim to acknowledge reports within 72 hours. A bug bounty program will be published before mainnet launch.
 
 ---
 
@@ -657,25 +679,29 @@ This is not legal advice, and the project operators must obtain their own.
 ## Roadmap
 
 **Phase 0: Foundations**
-- [ ] Finalize contract interface and state machine
-- [ ] Soroban contract with `fund`, `confirm`, `reclaim`, `cancel`
-- [ ] Unit tests and invariant tests
-- [ ] Monorepo scaffolding and CI
+
+- [x] Finalize contract interface and state machine
+- [x] Soroban contract with `fund`, `confirm`, `reclaim`, `cancel`
+- [x] Unit tests and invariant tests
+- [x] Monorepo scaffolding and CI
 
 **Phase 1: Testnet MVP**
-- [ ] Next.js PWA with Freighter for funder, school, and attester views
-- [ ] API, Postgres, and event indexer
-- [ ] Manual attester flow with KMS-backed signing
-- [ ] Sponsored reserves and fee-bump transactions
+
+- [x] Next.js PWA with Freighter for funder, school, and attester views
+- [x] API, Postgres, and event indexer
+- [x] Manual attester flow with KMS-backed signing
+- [x] Sponsored reserves and fee-bump transactions
 
 **Phase 2: Pilot**
-- [ ] One corridor, a handful of schools, capped volumes
+
+- [x] One corridor, a handful of schools, capped volumes (testnet validation)
 - [ ] Anchor integration (SEP-24 / SEP-31)
-- [ ] 2-of-3 attester thresholds
+- [x] 2-of-3 attester thresholds
 - [ ] External security audit
 - [ ] Legal review and licensing or partner arrangement
 
 **Phase 3: Expansion**
+
 - [ ] Milestone-based and installment vouchers (per term, per semester)
 - [ ] Pooled scholarship funds with per-student allocations
 - [ ] Dispute resolution module
