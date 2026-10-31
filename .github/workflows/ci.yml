@@ -27,7 +27,7 @@ jobs:
       - name: Run contract unit tests
         run: cargo test
       - name: Build WASM
-        run: cargo build --target wasm32-unknown-unknown --release
+        run: cargo build --target wasm32-unknown-unknown --release -p voucher
 
   # ── Node.js: all TypeScript packages and apps ─────────────────────────────
   node-checks:
