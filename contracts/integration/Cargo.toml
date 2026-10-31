@@ -15,9 +15,8 @@ publish = false
 # Without a cdylib target it compiles as a regular rlib for the test harness.
 
 [dependencies]
-soroban-sdk = { version = "22.0.0", features = ["testutils"] }
-voucher = { path = "../voucher" }
 
 [dev-dependencies]
 soroban-sdk = { version = "22.0.0", features = ["testutils"] }
+voucher = { path = "../voucher" }
 tokio = { version = "1", features = ["rt", "macros"] }
