@@ -13,14 +13,15 @@
  *   schoolId (optional) — for school_admin role
  */
 
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 
 export interface AuthUser {
   id: string;
   sub: string;
-  role: 'funder' | 'school_admin' | 'attester' | 'platform_admin';
+  role: "funder" | "school_admin" | "attester" | "platform_admin";
   schoolId?: string;
+  stellarAddress?: string;
 }
 
 declare global {
@@ -32,36 +33,41 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+export function requireAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
   const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'missing_token' });
+  if (!header?.startsWith("Bearer ")) {
+    res.status(401).json({ error: "missing_token" });
     return;
   }
   const token = header.slice(7);
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    res.status(500).json({ error: 'auth_misconfigured' });
+    res.status(500).json({ error: "auth_misconfigured" });
     return;
   }
   try {
     const payload = jwt.verify(token, secret) as jwt.JwtPayload;
     req.user = {
-      id: payload['userId'] as string,
-      sub: payload['sub'] as string,
-      role: payload['role'] as AuthUser['role'],
-      schoolId: payload['schoolId'] as string | undefined,
+      id: payload["userId"] as string,
+      sub: payload["sub"] as string,
+      role: payload["role"] as AuthUser["role"],
+      schoolId: payload["schoolId"] as string | undefined,
+      stellarAddress: payload["stellarAddress"] as string | undefined,
     };
     next();
   } catch {
-    res.status(401).json({ error: 'invalid_token' });
+    res.status(401).json({ error: "invalid_token" });
   }
 }
 
-export function requireRole(...roles: AuthUser['role'][]) {
+export function requireRole(...roles: AuthUser["role"][]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user || !roles.includes(req.user.role)) {
-      res.status(403).json({ error: 'forbidden' });
+      res.status(403).json({ error: "forbidden" });
       return;
     }
     next();
