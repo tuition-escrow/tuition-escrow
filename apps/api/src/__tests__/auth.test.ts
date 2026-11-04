@@ -139,6 +139,26 @@ describe("Auth boundaries — vouchers", () => {
     const res = await request(app).get("/vouchers/1");
     expect(res.status).toBe(401);
   });
+
+  it("POST /vouchers/link-mapping with funder token → links mapping", async () => {
+    const pool = mockPool(() => ({ rows: [] }));
+    const app = buildApp(pool);
+    const res = await request(app)
+      .post("/vouchers/link-mapping")
+      .set("Authorization", `Bearer ${makeToken("funder")}`)
+      .send({ mappingId: "mapping-1", voucherId: 42 });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("POST /vouchers/link-mapping without token → 401", async () => {
+    const pool = mockPool(() => ({ rows: [] }));
+    const app = buildApp(pool);
+    const res = await request(app)
+      .post("/vouchers/link-mapping")
+      .send({ mappingId: "mapping-1", voucherId: 42 });
+    expect(res.status).toBe(401);
+  });
 });
 
 describe("Auth boundaries — mapping endpoint", () => {

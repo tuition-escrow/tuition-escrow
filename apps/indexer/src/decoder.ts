@@ -30,19 +30,15 @@
  * Check: https://developers.stellar.org/docs/build/smart-contracts/overview
  */
 
-import type { RpcEvent } from './rpc';
+import type { RpcEvent } from "./rpc";
 
 // ─── Typed decoded events ──────────────────────────────────────────────────
 
 export type EventName =
-  | 'funded'
-  | 'attested'
-  | 'released'
-  | 'reclaimed'
-  | 'cancelled';
+  "funded" | "attested" | "released" | "reclaimed" | "cancelled";
 
 export interface FundedEvent {
-  name: 'funded';
+  name: "funded";
   ledger: number;
   id: bigint;
   funder: string;
@@ -50,11 +46,12 @@ export interface FundedEvent {
   token: string;
   amount: bigint;
   category: number;
+  studentRef?: string;
   expiresAt: bigint;
 }
 
 export interface AttestedEvent {
-  name: 'attested';
+  name: "attested";
   ledger: number;
   id: bigint;
   attester: string;
@@ -62,7 +59,7 @@ export interface AttestedEvent {
 }
 
 export interface ReleasedEvent {
-  name: 'released';
+  name: "released";
   ledger: number;
   id: bigint;
   school: string;
@@ -70,7 +67,7 @@ export interface ReleasedEvent {
 }
 
 export interface ReclaimedEvent {
-  name: 'reclaimed';
+  name: "reclaimed";
   ledger: number;
   id: bigint;
   funder: string;
@@ -78,17 +75,13 @@ export interface ReclaimedEvent {
 }
 
 export interface CancelledEvent {
-  name: 'cancelled';
+  name: "cancelled";
   ledger: number;
   id: bigint;
 }
 
 export type DecodedEvent =
-  | FundedEvent
-  | AttestedEvent
-  | ReleasedEvent
-  | ReclaimedEvent
-  | CancelledEvent;
+  FundedEvent | AttestedEvent | ReleasedEvent | ReclaimedEvent | CancelledEvent;
 
 // ─── XDR discriminants ────────────────────────────────────────────────────
 //
@@ -123,19 +116,20 @@ const SCV_LEDGER_KEY_NONCE = 21;
 
 function readUint32BE(buf: Buffer, offset: number): number {
   return (
-    ((buf[offset] ?? 0) << 24) |
-    ((buf[offset + 1] ?? 0) << 16) |
-    ((buf[offset + 2] ?? 0) << 8) |
-    (buf[offset + 3] ?? 0)
-  ) >>> 0;
+    (((buf[offset] ?? 0) << 24) |
+      ((buf[offset + 1] ?? 0) << 16) |
+      ((buf[offset + 2] ?? 0) << 8) |
+      (buf[offset + 3] ?? 0)) >>>
+    0
+  );
 }
 
 function readInt32BE(buf: Buffer, offset: number): number {
   return (
-    (((buf[offset] ?? 0) << 24) |
-      ((buf[offset + 1] ?? 0) << 16) |
-      ((buf[offset + 2] ?? 0) << 8) |
-      (buf[offset + 3] ?? 0)) |
+    ((buf[offset] ?? 0) << 24) |
+    ((buf[offset + 1] ?? 0) << 16) |
+    ((buf[offset + 2] ?? 0) << 8) |
+    (buf[offset + 3] ?? 0) |
     0
   );
 }
@@ -147,8 +141,10 @@ function readInt32BE(buf: Buffer, offset: number): number {
  * This handles only the ScVal variants emitted by the voucher contract.
  * Unknown variants throw so we detect encoding changes early.
  */
-export function decodeScVal(b64: string): bigint | number | string | boolean | null {
-  const buf = Buffer.from(b64, 'base64');
+export function decodeScVal(
+  b64: string,
+): bigint | number | string | boolean | null {
+  const buf = Buffer.from(b64, "base64");
   const discriminant = readInt32BE(buf, 0);
 
   switch (discriminant) {
@@ -208,7 +204,9 @@ export function decodeScVal(b64: string): bigint | number | string | boolean | n
     case SCV_SYMBOL: {
       // 4-byte length prefix, then raw bytes (padded to 4-byte boundary)
       const len = readUint32BE(buf, 4);
-      return buf.subarray(8, 8 + len).toString(discriminant === SCV_BYTES ? 'hex' : 'utf8');
+      return buf
+        .subarray(8, 8 + len)
+        .toString(discriminant === SCV_BYTES ? "hex" : "utf8");
     }
 
     case SCV_ADDRESS: {
@@ -222,16 +220,18 @@ export function decodeScVal(b64: string): bigint | number | string | boolean | n
       if (addressType === 0) {
         // AccountID: pubkey starts at offset 12 (4 discriminant, 4 address type, 4 key type)
         const pubkey = buf.subarray(12, 44);
-        return 'account:' + pubkey.toString('hex');
+        return "account:" + pubkey.toString("hex");
       } else {
         // ContractID: 32-byte hash at offset 8
         const hash = buf.subarray(8, 40);
-        return 'contract:' + hash.toString('hex');
+        return "contract:" + hash.toString("hex");
       }
     }
 
     default:
-      throw new Error(`decodeScVal: unsupported ScValType discriminant ${discriminant}`);
+      throw new Error(
+        `decodeScVal: unsupported ScValType discriminant ${discriminant}`,
+      );
   }
 }
 
@@ -249,7 +249,7 @@ export function decodeScVal(b64: string): bigint | number | string | boolean | n
  * individually encoded ScVal.  We parse the outer tuple here.
  */
 export function decodeEvent(event: RpcEvent): DecodedEvent | null {
-  if (event.type !== 'contract') return null;
+  if (event.type !== "contract") return null;
 
   const [nameTopic] = event.topic;
   if (!nameTopic) return null;
@@ -261,23 +261,41 @@ export function decodeEvent(event: RpcEvent): DecodedEvent | null {
     return null;
   }
 
-  if (!['funded', 'attested', 'released', 'reclaimed', 'cancelled'].includes(eventName)) {
+  if (
+    !["funded", "attested", "released", "reclaimed", "cancelled"].includes(
+      eventName,
+    )
+  ) {
     return null;
   }
 
   // Decode the value tuple.  The contract uses a VEC-wrapped tuple.
   // We parse the VEC manually: skip discriminant(4) + length(4) + item count(4),
   // then iterate items.
-  const valueBuf = Buffer.from(event.value.xdr, 'base64');
+  const valueBuf = Buffer.from(event.value.xdr, "base64");
   const valueFields = decodeVecScVal(valueBuf);
 
   const ledger = event.ledger;
 
   switch (eventName) {
-    case 'funded': {
-      // (id:u64, funder:Address, school:Address, token:Address, amount:i128, category:u32, expires_at:u64)
+    case "funded": {
+      // (id:u64, funder:Address, school:Address, token:Address, amount:i128, category:u32, [student_ref:BytesN<32>], expires_at:u64)
+      if (valueFields.length >= 8) {
+        return {
+          name: "funded",
+          ledger,
+          id: valueFields[0] as bigint,
+          funder: valueFields[1] as string,
+          school: valueFields[2] as string,
+          token: valueFields[3] as string,
+          amount: valueFields[4] as bigint,
+          category: valueFields[5] as number,
+          studentRef: valueFields[6] as string,
+          expiresAt: valueFields[7] as bigint,
+        };
+      }
       return {
-        name: 'funded',
+        name: "funded",
         ledger,
         id: valueFields[0] as bigint,
         funder: valueFields[1] as string,
@@ -285,43 +303,44 @@ export function decodeEvent(event: RpcEvent): DecodedEvent | null {
         token: valueFields[3] as string,
         amount: valueFields[4] as bigint,
         category: valueFields[5] as number,
+        studentRef: "",
         expiresAt: valueFields[6] as bigint,
       };
     }
-    case 'attested': {
+    case "attested": {
       // (voucher_id:u64, attester:Address, count:u32)
       return {
-        name: 'attested',
+        name: "attested",
         ledger,
         id: valueFields[0] as bigint,
         attester: valueFields[1] as string,
         count: valueFields[2] as number,
       };
     }
-    case 'released': {
+    case "released": {
       // (voucher_id:u64, school:Address, amount:i128)
       return {
-        name: 'released',
+        name: "released",
         ledger,
         id: valueFields[0] as bigint,
         school: valueFields[1] as string,
         amount: valueFields[2] as bigint,
       };
     }
-    case 'reclaimed': {
+    case "reclaimed": {
       // (voucher_id:u64, funder:Address, amount:i128)
       return {
-        name: 'reclaimed',
+        name: "reclaimed",
         ledger,
         id: valueFields[0] as bigint,
         funder: valueFields[1] as string,
         amount: valueFields[2] as bigint,
       };
     }
-    case 'cancelled': {
+    case "cancelled": {
       // (voucher_id:u64)
       return {
-        name: 'cancelled',
+        name: "cancelled",
         ledger,
         id: valueFields[0] as bigint,
       };
@@ -335,7 +354,9 @@ export function decodeEvent(event: RpcEvent): DecodedEvent | null {
  * Decode an XDR VEC ScVal into an array of decoded values.
  * Format: discriminant(4:SCV_VEC) + item_count(4) + [ScVal...]
  */
-function decodeVecScVal(buf: Buffer): (bigint | number | string | boolean | null)[] {
+function decodeVecScVal(
+  buf: Buffer,
+): (bigint | number | string | boolean | null)[] {
   const discriminant = readInt32BE(buf, 0);
   if (discriminant !== SCV_VEC) {
     // If the value is not a VEC, treat it as a single-element tuple
@@ -356,8 +377,10 @@ function decodeVecScVal(buf: Buffer): (bigint | number | string | boolean | null
   return items;
 }
 
-function decodeScValFromBuffer(buf: Buffer): bigint | number | string | boolean | null {
-  return decodeScVal(buf.toString('base64'));
+function decodeScValFromBuffer(
+  buf: Buffer,
+): bigint | number | string | boolean | null {
+  return decodeScVal(buf.toString("base64"));
 }
 
 /**
@@ -383,7 +406,10 @@ function decodeScValAtOffset(
     case SCV_U32:
     case SCV_I32:
       return {
-        value: discriminant === SCV_U32 ? readUint32BE(buf, offset + 4) : readInt32BE(buf, offset + 4),
+        value:
+          discriminant === SCV_U32
+            ? readUint32BE(buf, offset + 4)
+            : readInt32BE(buf, offset + 4),
         bytesRead: 8,
       };
 
@@ -403,7 +429,10 @@ function decodeScValAtOffset(
 
     case SCV_U128:
     case SCV_I128: {
-      const hiHi = discriminant === SCV_I128 ? readInt32BE(buf, offset + 4) : readUint32BE(buf, offset + 4);
+      const hiHi =
+        discriminant === SCV_I128
+          ? readInt32BE(buf, offset + 4)
+          : readUint32BE(buf, offset + 4);
       const hiLo = readUint32BE(buf, offset + 8);
       const loHi = readUint32BE(buf, offset + 12);
       const loLo = readUint32BE(buf, offset + 16);
@@ -419,7 +448,7 @@ function decodeScValAtOffset(
       const padded = Math.ceil(len / 4) * 4;
       const str = buf
         .subarray(offset + 8, offset + 8 + len)
-        .toString(discriminant === SCV_BYTES ? 'hex' : 'utf8');
+        .toString(discriminant === SCV_BYTES ? "hex" : "utf8");
       return { value: str, bytesRead: 8 + padded };
     }
 
@@ -429,11 +458,11 @@ function decodeScValAtOffset(
       if (addressType === 0) {
         // AccountID: 4 disc + 4 addr type + 4 key type + 32 bytes = 44
         const pubkey = buf.subarray(offset + 12, offset + 44);
-        return { value: 'account:' + pubkey.toString('hex'), bytesRead: 44 };
+        return { value: "account:" + pubkey.toString("hex"), bytesRead: 44 };
       } else {
         // ContractID: 4 disc + 4 addr type + 32 bytes = 40
         const hash = buf.subarray(offset + 8, offset + 40);
-        return { value: 'contract:' + hash.toString('hex'), bytesRead: 40 };
+        return { value: "contract:" + hash.toString("hex"), bytesRead: 40 };
       }
     }
 

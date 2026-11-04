@@ -142,7 +142,7 @@ impl VoucherContract {
             token: token.clone(),
             amount,
             category,
-            student_ref,
+            student_ref: student_ref.clone(),
             expires_at,
             status: Status::Funded,
             attesters: school_data.attesters.clone(),
@@ -156,7 +156,16 @@ impl VoucherContract {
 
         e.events().publish(
             (symbol_short!("funded"),),
-            (id, funder, school, token, amount, category, expires_at),
+            (
+                id,
+                funder,
+                school,
+                token,
+                amount,
+                category,
+                student_ref,
+                expires_at,
+            ),
         );
 
         Ok(id)
