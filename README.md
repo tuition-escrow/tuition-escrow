@@ -8,8 +8,6 @@ The funder does not have to be the student's family. A relative sending money fr
 
 > No student personal information ever touches the ledger. Vouchers carry a coarse fee category and an opaque student reference, never a name, a grade, an ID number, or a disciplinary or medical record.
 
-> **Status:** Early design / pre-alpha. Nothing in this repository has been audited. Do not use with real funds until a security audit and legal review are complete. See [Security](#security-model) and [Legal and regulatory notes](#legal-and-regulatory-notes).
-
 ---
 
 ## Project status
