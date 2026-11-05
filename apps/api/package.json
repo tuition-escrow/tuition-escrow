@@ -15,6 +15,8 @@
     "db:seed": "node -r ts-node/register src/migrations/seed.ts"
   },
   "dependencies": {
+    "@stellar/stellar-sdk": "^11.2.2",
+    "@tuition-escrow/contract-bindings": "workspace:*",
     "@tuition-escrow/shared": "workspace:*",
     "express": "^4.18.3",
     "express-rate-limit": "^7.2.0",

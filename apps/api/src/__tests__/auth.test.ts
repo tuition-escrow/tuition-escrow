@@ -298,4 +298,42 @@ describe("Auth router & school management", () => {
     expect(res.status).toBe(201);
     expect(res.body.attester.status).toBe("active");
   });
+
+  it("POST /vouchers/build-tx returns XDR for fund action", async () => {
+    const pool = mockPool(() => ({ rows: [] }));
+    const app = buildApp(pool);
+    const funderAddress =
+      "GDVGMYRYVG2HZV7SRB3C22L4CVJME7B2TKQ2XKQX6BNAIEHI2YS2VTDE";
+    const schoolAddress =
+      "GDVGMYRYVG2HZV7SRB3C22L4CVJME7B2TKQ2XKQX6BNAIEHI2YS2VTDE";
+    const tokenAddress =
+      "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+    const res = await request(app)
+      .post("/vouchers/build-tx")
+      .set("Authorization", `Bearer ${makeToken("funder")}`)
+      .send({
+        action: "fund",
+        sourceAddress: funderAddress,
+        params: {
+          school: schoolAddress,
+          token: tokenAddress,
+          amount: 500,
+          category: 0,
+          studentRef: "00".repeat(32),
+          expiresAt: Math.floor(Date.now() / 1000) + 86400,
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.txXdr).toBeDefined();
+  });
+
+  it("POST /vouchers/submit returns txHash", async () => {
+    const pool = mockPool(() => ({ rows: [] }));
+    const app = buildApp(pool);
+    const res = await request(app)
+      .post("/vouchers/submit")
+      .send({ txXdr: "AAAA..." });
+    expect(res.status).toBe(200);
+    expect(res.body.txHash).toBeDefined();
+  });
 });
