@@ -35,6 +35,12 @@ importers:
 
   apps/api:
     dependencies:
+      '@stellar/stellar-sdk':
+        specifier: ^11.2.2
+        version: 11.3.0
+      '@tuition-escrow/contract-bindings':
+        specifier: workspace:*
+        version: link:../../packages/contract-bindings
       '@tuition-escrow/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -132,6 +138,12 @@ importers:
 
   apps/attester:
     dependencies:
+      '@stellar/stellar-sdk':
+        specifier: ^11.2.2
+        version: 11.3.0
+      '@tuition-escrow/contract-bindings':
+        specifier: workspace:*
+        version: link:../../packages/contract-bindings
       '@tuition-escrow/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -202,6 +214,12 @@ importers:
 
   apps/indexer:
     dependencies:
+      '@stellar/stellar-sdk':
+        specifier: ^11.2.2
+        version: 11.3.0
+      '@tuition-escrow/contract-bindings':
+        specifier: workspace:*
+        version: link:../../packages/contract-bindings
       '@tuition-escrow/shared':
         specifier: workspace:*
         version: link:../../packages/shared
