@@ -9,7 +9,7 @@
     "bindings": "tsc"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^13.0.0"
+    "@stellar/stellar-sdk": "^11.2.2"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

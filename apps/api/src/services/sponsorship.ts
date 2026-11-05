@@ -22,7 +22,13 @@
  */
 
 import { logger } from "../logger";
-import { Keypair, TransactionBuilder, Networks } from "@stellar/stellar-sdk";
+import {
+  Keypair,
+  TransactionBuilder,
+  Networks,
+  FeeBumpTransaction,
+  Transaction,
+} from "@stellar/stellar-sdk";
 
 // Allowlisted operations the sponsor will pay for.
 // Any transaction that is not on this list is rejected.
@@ -127,10 +133,13 @@ export class SponsorshipServiceImpl implements SponsorshipService {
           innerTxXdr,
           networkPassphrase,
         );
+        if (innerTx instanceof FeeBumpTransaction) {
+          throw new Error("Cannot fee-bump an already fee-bumped transaction");
+        }
         const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(
           sponsorKeypair,
-          100000,
-          innerTx,
+          "100000",
+          innerTx as Transaction,
           networkPassphrase,
         );
         feeBumpTx.sign(sponsorKeypair);
