@@ -3,7 +3,7 @@
  * All API calls go through this module — no component fetches directly.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 export class ApiError extends Error {
   constructor(
@@ -12,7 +12,7 @@ export class ApiError extends Error {
     message: string,
   ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
   }
 }
 
@@ -22,21 +22,23 @@ async function apiFetch<T>(
 ): Promise<T> {
   const { token, ...fetchOptions } = options;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(fetchOptions.headers as Record<string, string> ?? {}),
+    "Content-Type": "application/json",
+    ...((fetchOptions.headers as Record<string, string>) ?? {}),
   };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE}${path}`, { ...fetchOptions, headers });
 
   if (!res.ok) {
-    let code = 'unknown_error';
+    let code = "unknown_error";
     let message = `HTTP ${res.status}`;
     try {
-      const body = await res.json() as { error?: string; message?: string };
+      const body = (await res.json()) as { error?: string; message?: string };
       code = body.error ?? code;
       message = body.message ?? message;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     throw new ApiError(res.status, code, message);
   }
 
@@ -52,7 +54,7 @@ export interface School {
 }
 
 export async function listSchools(): Promise<School[]> {
-  const data = await apiFetch<{ schools: School[] }>('/schools');
+  const data = await apiFetch<{ schools: School[] }>("/schools");
   return data.schools;
 }
 
@@ -96,8 +98,8 @@ export async function prepareVoucher(
     expiresAt: number;
   },
 ): Promise<PrepareVoucherResponse> {
-  return apiFetch<PrepareVoucherResponse>('/vouchers/prepare', {
-    method: 'POST',
+  return apiFetch<PrepareVoucherResponse>("/vouchers/prepare", {
+    method: "POST",
     body: JSON.stringify(payload),
     token,
   });
@@ -107,13 +109,22 @@ export async function listVouchers(
   token: string,
   funderAddress?: string,
 ): Promise<VoucherRow[]> {
-  const qs = funderAddress ? `?funderAddress=${encodeURIComponent(funderAddress)}` : '';
-  const data = await apiFetch<{ vouchers: VoucherRow[] }>(`/vouchers${qs}`, { token });
+  const qs = funderAddress
+    ? `?funderAddress=${encodeURIComponent(funderAddress)}`
+    : "";
+  const data = await apiFetch<{ vouchers: VoucherRow[] }>(`/vouchers${qs}`, {
+    token,
+  });
   return data.vouchers;
 }
 
-export async function getVoucher(token: string, id: string): Promise<VoucherRow> {
-  const data = await apiFetch<{ voucher: VoucherRow }>(`/vouchers/${id}`, { token });
+export async function getVoucher(
+  token: string,
+  id: string,
+): Promise<VoucherRow> {
+  const data = await apiFetch<{ voucher: VoucherRow }>(`/vouchers/${id}`, {
+    token,
+  });
   return data.voucher;
 }
 
@@ -130,4 +141,62 @@ export async function getVoucherMapping(
     `/schools/${schoolId}/vouchers/${voucherId}/mapping`,
     { token },
   );
+}
+
+export interface LoginResponse {
+  token: string;
+  user: {
+    id: string;
+    sub: string;
+    role: "funder" | "school_admin" | "attester" | "platform_admin";
+    schoolId?: string;
+    stellarAddress?: string;
+  };
+}
+
+export async function login(payload: {
+  role: "funder" | "school_admin" | "attester" | "platform_admin";
+  stellarAddress?: string;
+  schoolId?: string;
+}): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function buildVoucherTx(
+  token: string,
+  payload: {
+    action: "fund" | "confirm" | "reclaim" | "cancel";
+    sourceAddress: string;
+    params: Record<string, unknown>;
+    sponsor?: boolean;
+  },
+): Promise<{ txXdr: string }> {
+  return apiFetch<{ txXdr: string }>("/vouchers/build-tx", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    token,
+  });
+}
+
+export async function submitTx(
+  txXdr: string,
+): Promise<{ txHash: string; status: string }> {
+  return apiFetch<{ txHash: string; status: string }>("/vouchers/submit", {
+    method: "POST",
+    body: JSON.stringify({ txXdr }),
+  });
+}
+
+export async function linkVoucherMapping(
+  token: string,
+  payload: { mappingId: string; voucherId: number },
+): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>("/vouchers/link-mapping", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    token,
+  });
 }
