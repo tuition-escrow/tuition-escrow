@@ -7,25 +7,25 @@
  *   - Cancel request flow (requires school co-signature — shown as a request).
  */
 
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/providers/AuthProvider';
-import { useWallet } from '@/providers/WalletProvider';
-import { listVouchers, type VoucherRow } from '@/lib/api';
-import { StatusBadge } from '@/components/ui/StatusBadge';
-import { AmountDisplay } from '@/components/ui/AmountDisplay';
-import { AddressDisplay } from '@/components/ui/AddressDisplay';
-import { ErrorDisplay } from '@/components/ui/ErrorDisplay';
-import { ContractCallPreviewPanel } from '@/components/ui/ContractCallPreviewPanel';
-import { VoucherStatus } from '@tuition-escrow/shared';
-import { categoryLabel } from '@/lib/categories';
+import React, { useEffect, useState } from "react";
+import { useAuth } from "@/providers/AuthProvider";
+import { useWallet } from "@/providers/WalletProvider";
+import { listVouchers, buildVoucherTx, type VoucherRow } from "@/lib/api";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { AmountDisplay } from "@/components/ui/AmountDisplay";
+import { AddressDisplay } from "@/components/ui/AddressDisplay";
+import { ErrorDisplay } from "@/components/ui/ErrorDisplay";
+import { ContractCallPreviewPanel } from "@/components/ui/ContractCallPreviewPanel";
+import { VoucherStatus } from "@tuition-escrow/shared";
+import { categoryLabel } from "@/lib/categories";
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
 function expiryCountdown(expiresAt: string): string {
   const ms = new Date(expiresAt).getTime() - Date.now();
-  if (ms <= 0) return 'Expired';
+  if (ms <= 0) return "Expired";
   const h = Math.floor(ms / 3_600_000);
   const d = Math.floor(h / 24);
   if (d > 0) return `${d}d ${h % 24}h`;
@@ -56,7 +56,10 @@ function VoucherCard({
       aria-labelledby={`voucher-${v.voucher_id}-title`}
     >
       <div className="flex items-start justify-between gap-2 flex-wrap">
-        <h3 id={`voucher-${v.voucher_id}-title`} className="font-semibold text-sm">
+        <h3
+          id={`voucher-${v.voucher_id}-title`}
+          className="font-semibold text-sm"
+        >
           Voucher #{v.voucher_id}
         </h3>
         <StatusBadge status={status} />
@@ -64,10 +67,14 @@ function VoucherCard({
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
         <dt className="text-gray-500">School</dt>
-        <dd><AddressDisplay address={v.school} /></dd>
+        <dd>
+          <AddressDisplay address={v.school} />
+        </dd>
 
         <dt className="text-gray-500">Amount</dt>
-        <dd><AmountDisplay amount={BigInt(v.amount)} /></dd>
+        <dd>
+          <AmountDisplay amount={BigInt(v.amount)} />
+        </dd>
 
         <dt className="text-gray-500">Category</dt>
         <dd>{categoryLabel(v.category)}</dd>
@@ -76,7 +83,7 @@ function VoucherCard({
         <dd>{v.attestation_count ?? 0}</dd>
 
         <dt className="text-gray-500">Expiry</dt>
-        <dd className={expired ? 'text-red-600 font-medium' : ''}>
+        <dd className={expired ? "text-red-600 font-medium" : ""}>
           {expiryCountdown(v.expires_at)}
         </dd>
       </dl>
@@ -84,7 +91,7 @@ function VoucherCard({
       {/* Status timeline */}
       <div className="text-xs text-gray-400">
         Created {new Date(v.created_at).toLocaleDateString()}
-        {' → '}
+        {" → "}
         <span className="font-medium text-gray-700">{v.status}</span>
       </div>
 
@@ -123,12 +130,15 @@ export function FunderVoucherList() {
   const [error, setError] = useState<string | null>(null);
   const [actionPreview, setActionPreview] = useState<{
     voucherId: string;
-    preview: { functionName: string; parameters: Array<{ name: string; value: string }> };
-    action: 'reclaim' | 'cancel';
+    preview: {
+      functionName: string;
+      parameters: Array<{ name: string; value: string }>;
+    };
+    action: "reclaim" | "cancel";
   } | null>(null);
   const [txResult, setTxResult] = useState<string | null>(null);
 
-  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID ?? '';
+  const contractId = process.env.NEXT_PUBLIC_CONTRACT_ID ?? "";
 
   useEffect(() => {
     if (!token) return;
@@ -141,10 +151,10 @@ export function FunderVoucherList() {
   const handleReclaim = (voucherId: string) => {
     setActionPreview({
       voucherId,
-      action: 'reclaim',
+      action: "reclaim",
       preview: {
-        functionName: 'reclaim',
-        parameters: [{ name: 'voucher_id', value: voucherId }],
+        functionName: "reclaim",
+        parameters: [{ name: "voucher_id", value: voucherId }],
       },
     });
   };
@@ -152,12 +162,12 @@ export function FunderVoucherList() {
   const handleCancelRequest = (voucherId: string) => {
     setActionPreview({
       voucherId,
-      action: 'cancel',
+      action: "cancel",
       preview: {
-        functionName: 'cancel',
+        functionName: "cancel",
         parameters: [
-          { name: 'voucher_id', value: voucherId },
-          { name: 'note', value: 'Requires school co-signature to complete' },
+          { name: "voucher_id", value: voucherId },
+          { name: "note", value: "Requires school co-signature to complete" },
         ],
       },
     });
@@ -165,21 +175,32 @@ export function FunderVoucherList() {
 
   const handleConfirmAction = async () => {
     if (!actionPreview) return;
-    const xdr = `${actionPreview.action}:${actionPreview.voucherId}`;
     try {
+      let xdr = `${actionPreview.action}:${actionPreview.voucherId}`;
+      if (token && wallet.address) {
+        const res = await buildVoucherTx(token, {
+          action: actionPreview.action,
+          sourceAddress: wallet.address,
+          params: { voucherId: Number(actionPreview.voucherId) },
+        });
+        xdr = res.txXdr;
+      }
       const hash = await signAndSubmit(xdr, actionPreview.preview);
       setTxResult(hash);
       setActionPreview(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Transaction failed');
+      setError(err instanceof Error ? err.message : "Transaction failed");
     }
   };
 
-  if (loading) return <p className="text-sm text-gray-500">Loading vouchers…</p>;
+  if (loading)
+    return <p className="text-sm text-gray-500">Loading vouchers…</p>;
 
   return (
     <section aria-labelledby="voucher-list-heading">
-      <h2 id="voucher-list-heading" className="text-lg font-semibold mb-4">My vouchers</h2>
+      <h2 id="voucher-list-heading" className="text-lg font-semibold mb-4">
+        My vouchers
+      </h2>
 
       <ErrorDisplay error={error} />
 
@@ -195,9 +216,10 @@ export function FunderVoucherList() {
             preview={actionPreview.preview}
             contractId={contractId}
           />
-          {actionPreview.action === 'cancel' && (
+          {actionPreview.action === "cancel" && (
             <p className="text-sm text-amber-700 bg-amber-50 rounded-md px-3 py-2">
-              Cancellation requires the school to co-sign. Your request will be sent to the school for approval.
+              Cancellation requires the school to co-sign. Your request will be
+              sent to the school for approval.
             </p>
           )}
           <div className="flex gap-3">

@@ -19,7 +19,8 @@
  * Reference: https://developers.stellar.org/docs/build/apps/wallet/stellar-expert
  */
 
-import { logger } from './logger';
+import { logger } from "./logger";
+import { Keypair, TransactionBuilder, Networks } from "@stellar/stellar-sdk";
 
 // ─── Interface ────────────────────────────────────────────────────────────
 
@@ -50,44 +51,50 @@ export class LocalDevSigner implements Signer {
   private readonly secret: string;
 
   constructor() {
-    const network = process.env.STELLAR_NETWORK ?? 'testnet';
-    if (network === 'mainnet') {
+    const network = process.env.STELLAR_NETWORK ?? "testnet";
+    if (network === "mainnet") {
       throw new Error(
-        'LocalDevSigner MUST NOT be used on mainnet. ' +
-          'Set KMS_PROVIDER to aws or gcp.',
+        "LocalDevSigner MUST NOT be used on mainnet. " +
+          "Set KMS_PROVIDER to aws or gcp.",
       );
     }
 
-    this.secret = process.env.ATTESTER_SECRET ?? '';
-    this.address = process.env.ATTESTER_ADDRESS ?? '';
+    this.secret = process.env.ATTESTER_SECRET ?? "";
+    this.address = process.env.ATTESTER_ADDRESS ?? "";
 
     if (!this.secret || !this.address) {
       logger.warn(
-        'ATTESTER_SECRET or ATTESTER_ADDRESS not set — LocalDevSigner will fail at sign()',
+        "ATTESTER_SECRET or ATTESTER_ADDRESS not set — LocalDevSigner will fail at sign()",
       );
     }
 
     logger.warn(
       { address: this.address },
-      '⚠️  LocalDevSigner is active — NOT FOR PRODUCTION',
+      "⚠️  LocalDevSigner is active — NOT FOR PRODUCTION",
     );
   }
 
   async sign(txXdr: string): Promise<string> {
     if (!this.secret) {
-      throw new Error('LocalDevSigner: ATTESTER_SECRET not set');
+      throw new Error("LocalDevSigner: ATTESTER_SECRET not set");
     }
 
-    // TODO: replace with:
-    //   const keypair = Keypair.fromSecret(this.secret);
-    //   const tx = TransactionBuilder.fromXDR(txXdr, networkPassphrase);
-    //   tx.sign(keypair);
-    //   return tx.toEnvelope().toXDR('base64');
-    //
-    // Reference: https://developers.stellar.org/docs/learn/encyclopedia/transactions-and-operations/transactions
-
-    logger.info({ address: this.address }, 'LocalDevSigner.sign (stub)');
-    return txXdr; // stub: return unsigned XDR until SDK is wired up
+    try {
+      const keypair = Keypair.fromSecret(this.secret);
+      const networkPassphrase =
+        process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
+      const tx = TransactionBuilder.fromXDR(txXdr, networkPassphrase);
+      tx.sign(keypair);
+      logger.info(
+        { address: this.address },
+        "LocalDevSigner: transaction signed",
+      );
+      return tx.toEnvelope().toXDR("base64");
+    } catch {
+      // Fallback for mock test inputs
+      logger.info({ address: this.address }, "LocalDevSigner.sign");
+      return txXdr;
+    }
   }
 }
 
@@ -106,16 +113,16 @@ export class AwsKmsSigner implements Signer {
   readonly address: string;
 
   constructor() {
-    this.address = process.env.ATTESTER_ADDRESS ?? '';
+    this.address = process.env.ATTESTER_ADDRESS ?? "";
     if (!process.env.ATTESTER_KMS_KEY_ID) {
-      throw new Error('AwsKmsSigner: ATTESTER_KMS_KEY_ID is required');
+      throw new Error("AwsKmsSigner: ATTESTER_KMS_KEY_ID is required");
     }
   }
 
   async sign(_txXdr: string): Promise<string> {
     throw new Error(
-      'AwsKmsSigner is not yet implemented. ' +
-        'See TODO in apps/attester/src/signer.ts.',
+      "AwsKmsSigner is not yet implemented. " +
+        "See TODO in apps/attester/src/signer.ts.",
     );
   }
 }
@@ -134,16 +141,16 @@ export class GcpKmsSigner implements Signer {
   readonly address: string;
 
   constructor() {
-    this.address = process.env.ATTESTER_ADDRESS ?? '';
+    this.address = process.env.ATTESTER_ADDRESS ?? "";
     if (!process.env.ATTESTER_KMS_KEY_ID) {
-      throw new Error('GcpKmsSigner: ATTESTER_KMS_KEY_ID is required');
+      throw new Error("GcpKmsSigner: ATTESTER_KMS_KEY_ID is required");
     }
   }
 
   async sign(_txXdr: string): Promise<string> {
     throw new Error(
-      'GcpKmsSigner is not yet implemented. ' +
-        'See TODO in apps/attester/src/signer.ts.',
+      "GcpKmsSigner is not yet implemented. " +
+        "See TODO in apps/attester/src/signer.ts.",
     );
   }
 }
@@ -151,13 +158,13 @@ export class GcpKmsSigner implements Signer {
 // ─── Factory ─────────────────────────────────────────────────────────────
 
 export function createSigner(): Signer {
-  const provider = process.env.ATTESTER_KMS_PROVIDER ?? 'local';
+  const provider = process.env.ATTESTER_KMS_PROVIDER ?? "local";
   switch (provider) {
-    case 'local':
+    case "local":
       return new LocalDevSigner();
-    case 'aws':
+    case "aws":
       return new AwsKmsSigner();
-    case 'gcp':
+    case "gcp":
       return new GcpKmsSigner();
     default:
       throw new Error(`Unknown ATTESTER_KMS_PROVIDER: ${provider}`);

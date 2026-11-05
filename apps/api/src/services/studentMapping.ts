@@ -17,11 +17,11 @@
  *   • The decrypted mapping is only accessible to the owning school.
  */
 
-import { Pool } from 'pg';
-import { generateSalt, computeStudentRef } from '@tuition-escrow/shared';
-import { KmsAdapter } from '../kms/kms';
-import { auditLog } from './audit';
-import { logger } from '../logger';
+import { Pool } from "pg";
+import { generateSalt, computeStudentRef } from "@tuition-escrow/shared";
+import { KmsAdapter } from "../kms/kms";
+import { auditLog } from "./audit";
+import { logger } from "../logger";
 
 export interface PreparedVoucherMapping {
   /** Hex-encoded SHA-256 hash — safe to put on-chain */
@@ -58,31 +58,37 @@ export class StudentMappingService {
 
     // Encrypt both values independently so a single decrypt call cannot
     // expose both at once without two KMS calls.
-    const encryptedIdentifier = await this.kms.encrypt(this.kmsKeyId, studentIdentifier);
+    const encryptedIdentifier = await this.kms.encrypt(
+      this.kmsKeyId,
+      studentIdentifier,
+    );
     const encryptedSalt = await this.kms.encrypt(this.kmsKeyId, salt);
 
-    // Insert with voucher_id = NULL (will be set after on-chain fund).
+    // Insert with voucher_id = NULL (will be set after on-chain fund or auto-linked by student_ref).
     // IMPORTANT: never log studentRef alongside identifier or salt.
     const { rows } = await this.pool.query<{ id: string }>(
       `INSERT INTO student_mappings
-         (encrypted_student_identifier, encrypted_salt, key_id)
-       VALUES ($1, $2, $3)
+         (encrypted_student_identifier, encrypted_salt, key_id, student_ref)
+       VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      [encryptedIdentifier, encryptedSalt, this.kmsKeyId],
+      [encryptedIdentifier, encryptedSalt, this.kmsKeyId, studentRef],
     );
 
     const mappingId = rows[0].id;
 
     // Audit: log the event without the identifier or student_ref.
     await auditLog(this.pool, {
-      eventType: 'student_mapping.prepared',
+      eventType: "student_mapping.prepared",
       actorId,
       resource: `student_mapping:${mappingId}`,
       detail: { keyId: this.kmsKeyId },
     });
 
     // Do NOT log studentRef or identifier here.
-    logger.info({ mappingId, keyId: this.kmsKeyId }, 'student mapping prepared');
+    logger.info(
+      { mappingId, keyId: this.kmsKeyId },
+      "student mapping prepared",
+    );
 
     return { studentRef, mappingId };
   }
@@ -100,7 +106,7 @@ export class StudentMappingService {
       [voucherId, mappingId],
     );
     await auditLog(this.pool, {
-      eventType: 'student_mapping.linked',
+      eventType: "student_mapping.linked",
       actorId,
       resource: `student_mapping:${mappingId}`,
       detail: { voucherId },
@@ -123,27 +129,34 @@ export class StudentMappingService {
       key_id: string;
       deleted_at: Date | null;
     }>(
-      `SELECT id, encrypted_student_identifier, encrypted_salt, key_id, deleted_at
-       FROM student_mappings
-       WHERE voucher_id = $1`,
+      `SELECT sm.id, sm.encrypted_student_identifier, sm.encrypted_salt, sm.key_id, sm.deleted_at
+       FROM student_mappings sm
+       LEFT JOIN vouchers v ON v.voucher_id = $1
+       WHERE sm.voucher_id = $1
+          OR (sm.student_ref IS NOT NULL AND v.student_ref IS NOT NULL AND v.student_ref != '' AND sm.student_ref = v.student_ref)
+       ORDER BY sm.created_at DESC
+       LIMIT 1`,
       [voucherId],
     );
 
     if (rows.length === 0) {
-      throw new Error('MAPPING_NOT_FOUND');
+      throw new Error("MAPPING_NOT_FOUND");
     }
     const row = rows[0];
 
     if (row.deleted_at !== null) {
-      throw new Error('MAPPING_DELETED');
+      throw new Error("MAPPING_DELETED");
     }
 
-    const studentIdentifier = await this.kms.decrypt(row.key_id, row.encrypted_student_identifier);
+    const studentIdentifier = await this.kms.decrypt(
+      row.key_id,
+      row.encrypted_student_identifier,
+    );
     const salt = await this.kms.decrypt(row.key_id, row.encrypted_salt);
 
     // Audit the access — log only the mapping ID, never the decrypted values.
     await auditLog(this.pool, {
-      eventType: 'student_mapping.accessed',
+      eventType: "student_mapping.accessed",
       actorId: requestingUserId,
       resource: `student_mapping:${row.id}`,
       detail: { voucherId },
@@ -152,7 +165,7 @@ export class StudentMappingService {
     // Do NOT log studentIdentifier or salt.
     logger.info(
       { mappingId: row.id, requestingUserId },
-      'student mapping accessed by school admin',
+      "student mapping accessed by school admin",
     );
 
     return { studentIdentifier, salt };
@@ -172,11 +185,11 @@ export class StudentMappingService {
       [mappingId],
     );
     await auditLog(this.pool, {
-      eventType: 'student_mapping.deleted',
+      eventType: "student_mapping.deleted",
       actorId,
       resource: `student_mapping:${mappingId}`,
       detail: {},
     });
-    logger.info({ mappingId }, 'student mapping deleted (retention)');
+    logger.info({ mappingId }, "student mapping deleted (retention)");
   }
 }

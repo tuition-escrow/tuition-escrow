@@ -1,20 +1,29 @@
-import type { Metadata } from 'next';
-import { WalletProvider } from '@/providers/WalletProvider';
-import { AuthProvider } from '@/providers/AuthProvider';
-import './globals.css';
+import type { Metadata, Viewport } from "next";
+import { WalletProvider } from "@/providers/WalletProvider";
+import { AuthProvider } from "@/providers/AuthProvider";
+import { Navbar } from "@/components/Navbar";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: 'Tuition Escrow',
-  description: 'Purpose-bound school-fee payments on Stellar',
-  manifest: '/manifest.json',
-  themeColor: '#1a56db',
+  title: "Tuition Escrow",
+  description: "Purpose-bound school-fee payments on Stellar",
+  manifest: "/manifest.json",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const viewport: Viewport = {
+  themeColor: "#1a56db",
+  width: "device-width",
+  initialScale: 1,
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="manifest" href="/manifest.json" />
       </head>
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
@@ -26,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             >
               Skip to main content
             </a>
+            <Navbar />
             <main id="main-content">{children}</main>
           </WalletProvider>
         </AuthProvider>

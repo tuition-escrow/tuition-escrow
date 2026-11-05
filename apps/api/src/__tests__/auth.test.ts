@@ -15,6 +15,7 @@ import { describe, it, expect, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import jwt from "jsonwebtoken";
+import { authRouter } from "../routes/auth";
 import { schoolsRouter } from "../routes/schools";
 import { vouchersRouter, schoolVouchersRouter } from "../routes/vouchers";
 import { StudentMappingService } from "../services/studentMapping";
@@ -52,6 +53,7 @@ function buildApp(pool: Pool) {
   const app = express();
   app.use(express.json());
   const mapping = stubMappingService(pool);
+  app.use("/auth", authRouter(pool));
   app.use("/schools", schoolsRouter(pool));
   app.use("/vouchers", vouchersRouter(pool, mapping));
   app.use("/schools/:id/vouchers", schoolVouchersRouter(pool, mapping));
@@ -139,6 +141,26 @@ describe("Auth boundaries — vouchers", () => {
     const res = await request(app).get("/vouchers/1");
     expect(res.status).toBe(401);
   });
+
+  it("POST /vouchers/link-mapping with funder token → links mapping", async () => {
+    const pool = mockPool(() => ({ rows: [] }));
+    const app = buildApp(pool);
+    const res = await request(app)
+      .post("/vouchers/link-mapping")
+      .set("Authorization", `Bearer ${makeToken("funder")}`)
+      .send({ mappingId: "mapping-1", voucherId: 42 });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  it("POST /vouchers/link-mapping without token → 401", async () => {
+    const pool = mockPool(() => ({ rows: [] }));
+    const app = buildApp(pool);
+    const res = await request(app)
+      .post("/vouchers/link-mapping")
+      .send({ mappingId: "mapping-1", voucherId: 42 });
+    expect(res.status).toBe(401);
+  });
 });
 
 describe("Auth boundaries — mapping endpoint", () => {
@@ -217,5 +239,101 @@ describe("Auth boundaries — mapping endpoint", () => {
     expect(res.status).toBe(200);
     expect(res.body.mapping).toBeDefined();
     expect(res.body.mapping.studentIdentifier).toBe("student-123");
+  });
+});
+
+describe("Auth router & school management", () => {
+  it("POST /auth/login returns JWT and user profile", async () => {
+    const pool = mockPool(() => ({
+      rows: [{ id: "user-uuid-1", role: "funder", school_id: null }],
+    }));
+    const app = buildApp(pool);
+    const res = await request(app)
+      .post("/auth/login")
+      .send({ role: "funder", stellarAddress: "G" + "A".repeat(55) });
+    expect(res.status).toBe(200);
+    expect(res.body.token).toBeDefined();
+    expect(res.body.user.role).toBe("funder");
+  });
+
+  it("GET /auth/me with valid token returns user", async () => {
+    const pool = mockPool(() => ({ rows: [] }));
+    const app = buildApp(pool);
+    const token = makeToken("funder", { sub: "funder-sub" });
+    const res = await request(app)
+      .get("/auth/me")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.user.role).toBe("funder");
+  });
+
+  it("POST /schools/:id/activate with platform_admin activates school", async () => {
+    const pool = mockPool(() => ({
+      rows: [{ id: "school-1", verification_status: "active" }],
+    }));
+    const app = buildApp(pool);
+    const res = await request(app)
+      .post("/schools/school-1/activate")
+      .set("Authorization", `Bearer ${makeToken("platform_admin")}`);
+    expect(res.status).toBe(200);
+    expect(res.body.school.verification_status).toBe("active");
+  });
+
+  it("POST /schools/:id/register-attester with platform_admin registers attester", async () => {
+    const pool = mockPool(() => ({
+      rows: [
+        {
+          id: "att-1",
+          school_id: "school-1",
+          stellar_address: "G" + "A".repeat(55),
+          status: "active",
+        },
+      ],
+    }));
+    const app = buildApp(pool);
+    const res = await request(app)
+      .post("/schools/school-1/register-attester")
+      .set("Authorization", `Bearer ${makeToken("platform_admin")}`)
+      .send({ stellarAddress: "G" + "A".repeat(55), role: "registrar" });
+    expect(res.status).toBe(201);
+    expect(res.body.attester.status).toBe("active");
+  });
+
+  it("POST /vouchers/build-tx returns XDR for fund action", async () => {
+    const pool = mockPool(() => ({ rows: [] }));
+    const app = buildApp(pool);
+    const funderAddress =
+      "GDVGMYRYVG2HZV7SRB3C22L4CVJME7B2TKQ2XKQX6BNAIEHI2YS2VTDE";
+    const schoolAddress =
+      "GDVGMYRYVG2HZV7SRB3C22L4CVJME7B2TKQ2XKQX6BNAIEHI2YS2VTDE";
+    const tokenAddress =
+      "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+    const res = await request(app)
+      .post("/vouchers/build-tx")
+      .set("Authorization", `Bearer ${makeToken("funder")}`)
+      .send({
+        action: "fund",
+        sourceAddress: funderAddress,
+        params: {
+          school: schoolAddress,
+          token: tokenAddress,
+          amount: 500,
+          category: 0,
+          studentRef: "00".repeat(32),
+          expiresAt: Math.floor(Date.now() / 1000) + 86400,
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.txXdr).toBeDefined();
+  });
+
+  it("POST /vouchers/submit returns txHash", async () => {
+    const pool = mockPool(() => ({ rows: [] }));
+    const app = buildApp(pool);
+    const res = await request(app)
+      .post("/vouchers/submit")
+      .send({ txXdr: "AAAA..." });
+    expect(res.status).toBe(200);
+    expect(res.body.txHash).toBeDefined();
   });
 });
