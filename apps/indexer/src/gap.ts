@@ -23,9 +23,16 @@
  * the typed contract client once the SDK is pinned.
  */
 
-import type { Pool, PoolClient } from 'pg';
-import { logger } from './logger';
-import { errorsCounter, eventsCounter } from './metrics';
+import type { Pool, PoolClient } from "pg";
+import {
+  Account,
+  Networks,
+  TransactionBuilder,
+  TimeoutInfinite,
+} from "@stellar/stellar-sdk";
+import { VoucherClient } from "@tuition-escrow/contract-bindings";
+import { logger } from "./logger";
+import { errorsCounter, eventsCounter } from "./metrics";
 
 export interface GapRecoveryOptions {
   rpcUrl: string;
@@ -38,7 +45,7 @@ export interface GapRecoveryOptions {
  * Only the fields we need to reconcile status.
  */
 interface OnChainVoucherStatus {
-  status: 'Funded' | 'Released' | 'Reclaimed' | 'Cancelled';
+  status: "Funded" | "Released" | "Reclaimed" | "Cancelled";
 }
 
 /**
@@ -48,10 +55,13 @@ interface OnChainVoucherStatus {
  * batch or paginate.  For the pilot scale described in the README (capped
  * volumes) this is acceptable.
  */
-export async function recoverGap(pool: Pool, opts: GapRecoveryOptions): Promise<void> {
+export async function recoverGap(
+  pool: Pool,
+  opts: GapRecoveryOptions,
+): Promise<void> {
   logger.warn(
     { contractId: opts.contractId },
-    'Gap recovery: fetching on-chain state for all Funded vouchers',
+    "Gap recovery: fetching on-chain state for all Funded vouchers",
   );
 
   const { rows } = await pool.query<{ voucher_id: string }>(
@@ -64,33 +74,40 @@ export async function recoverGap(pool: Pool, opts: GapRecoveryOptions): Promise<
   for (const row of rows) {
     const voucherId = BigInt(row.voucher_id);
     try {
-      const onChain = await fetchVoucherStatus(opts.rpcUrl, opts.contractId, voucherId);
-      if (onChain && onChain.status !== 'Funded') {
+      const onChain = await fetchVoucherStatus(
+        opts.rpcUrl,
+        opts.contractId,
+        voucherId,
+      );
+      if (onChain && onChain.status !== "Funded") {
         await applyRecoveredStatus(pool, voucherId, onChain.status);
         recovered++;
-        eventsCounter.inc({ event_type: 'gap_recovery' });
+        eventsCounter.inc({ event_type: "gap_recovery" });
       }
     } catch (err) {
       errors++;
-      errorsCounter.inc({ error_type: 'gap_recovery' });
+      errorsCounter.inc({ error_type: "gap_recovery" });
       logger.error(
         { voucherId: voucherId.toString(), err },
-        'Gap recovery: failed to fetch voucher state',
+        "Gap recovery: failed to fetch voucher state",
       );
     }
   }
 
-  logger.info({ recovered, errors, total: rows.length }, 'Gap recovery complete');
+  logger.info(
+    { recovered, errors, total: rows.length },
+    "Gap recovery complete",
+  );
 }
 
 async function applyRecoveredStatus(
   pool: Pool,
   voucherId: bigint,
-  status: 'Released' | 'Reclaimed' | 'Cancelled',
+  status: "Released" | "Reclaimed" | "Cancelled",
 ): Promise<void> {
   const client: PoolClient = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
     await client.query(
       `UPDATE vouchers
        SET status = $1, updated_at = now()
@@ -98,13 +115,13 @@ async function applyRecoveredStatus(
          AND status = 'Funded'`,
       [status, voucherId.toString()],
     );
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     logger.info(
       { voucherId: voucherId.toString(), status },
-      'Gap recovery: status applied',
+      "Gap recovery: status applied",
     );
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
@@ -124,25 +141,54 @@ async function applyRecoveredStatus(
  */
 async function fetchVoucherStatus(
   rpcUrl: string,
-  _contractId: string,
-  _voucherId: bigint,
+  contractId: string,
+  voucherId: bigint,
 ): Promise<OnChainVoucherStatus | null> {
-  // STUB: real implementation calls simulateTransaction with get_voucher.
-  // Replace once contract-bindings are regenerated with the deployed contract ID.
-  //
-  // Example (pseudocode):
-  //   const contract = new Contract(contractId);
-  //   const tx = new TransactionBuilder(sourceAccount, { fee: '100', networkPassphrase })
-  //     .addOperation(contract.call('get_voucher', xdr.ScVal.scvU64(new xdr.Uint64(voucherId))))
-  //     .setTimeout(0)
-  //     .build();
-  //   const result = await rpcClient.simulateTransaction(tx);
-  //   const statusValue = result.result.retval; // parse XDR ScVal
-  //
-  // For now, return null (no state change) so the fallback is a no-op stub.
-  logger.warn(
-    { rpcUrl, voucherId: _voucherId.toString() },
-    'fetchVoucherStatus: stub — implement with contract-bindings (see gap.ts TODO)',
-  );
-  return null;
+  if (!rpcUrl || !contractId) return null;
+
+  try {
+    const client = new VoucherClient(contractId);
+    const getOp = client.buildGetVoucherOp(voucherId);
+    const sourceAccount = new Account(
+      "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+      "0",
+    );
+    const networkPassphrase =
+      process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
+    const tx = new TransactionBuilder(sourceAccount, {
+      fee: "100",
+      networkPassphrase,
+    })
+      .addOperation(getOp)
+      .setTimeout(TimeoutInfinite)
+      .build();
+
+    const res = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "simulateTransaction",
+        params: { transaction: tx.toEnvelope().toXDR("base64") },
+      }),
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as { result?: { retval?: string } };
+    if (!data.result?.retval) return null;
+
+    const parsed = client.parseVoucherScVal(data.result.retval);
+    if (!parsed) return null;
+
+    return {
+      status: parsed.status as OnChainVoucherStatus["status"],
+    };
+  } catch (err) {
+    logger.warn(
+      { rpcUrl, voucherId: voucherId.toString(), err },
+      "fetchVoucherStatus: simulateTransaction error",
+    );
+    return null;
+  }
 }

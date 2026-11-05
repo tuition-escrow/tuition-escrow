@@ -11,7 +11,14 @@
  * Replace fetchVoucher() with the typed contract client once the SDK is pinned.
  */
 
-import { logger } from './logger';
+import { logger } from "./logger";
+import {
+  Account,
+  Networks,
+  TransactionBuilder,
+  TimeoutInfinite,
+} from "@stellar/stellar-sdk";
+import { VoucherClient } from "@tuition-escrow/contract-bindings";
 
 export interface OnChainVoucher {
   id: bigint;
@@ -20,8 +27,9 @@ export interface OnChainVoucher {
   token: string;
   amount: bigint;
   category: number;
-  expiresAt: bigint;  // Unix seconds
-  status: 'Funded' | 'Released' | 'Reclaimed' | 'Cancelled' | 'Disputed' | 'Refunded';
+  expiresAt: bigint; // Unix seconds
+  status:
+    "Funded" | "Released" | "Reclaimed" | "Cancelled" | "Disputed" | "Refunded";
   attesters: string[];
   threshold: number;
   attestationCount: number;
@@ -44,15 +52,67 @@ export class SorobanChainChecker implements ChainChecker {
   ) {}
 
   async fetchVoucher(voucherId: bigint): Promise<OnChainVoucher | null> {
-    // STUB — implement with contract-bindings once SDK is pinned.
-    // Logs a warning so operators know this is not yet functional.
-    logger.warn(
-      { voucherId: voucherId.toString(), rpcUrl: this.rpcUrl, contractId: this.contractId },
-      'SorobanChainChecker.fetchVoucher: stub — implement with contract-bindings',
-    );
-    // Return null to fail-closed: if we cannot verify on-chain state,
-    // we do not attest.
-    return null;
+    if (!this.rpcUrl || !this.contractId) {
+      return null;
+    }
+
+    try {
+      const client = new VoucherClient(this.contractId);
+      const getOp = client.buildGetVoucherOp(voucherId);
+      const sourceAccount = new Account(
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        "0",
+      );
+      const networkPassphrase =
+        process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
+      const tx = new TransactionBuilder(sourceAccount, {
+        fee: "100",
+        networkPassphrase,
+      })
+        .addOperation(getOp)
+        .setTimeout(TimeoutInfinite)
+        .build();
+
+      const res = await fetch(this.rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "simulateTransaction",
+          params: { transaction: tx.toEnvelope().toXDR("base64") },
+        }),
+      });
+
+      if (!res.ok) return null;
+      const data = (await res.json()) as {
+        result?: { retval?: string };
+      };
+      if (!data.result?.retval) return null;
+
+      const parsed = client.parseVoucherScVal(data.result.retval);
+      if (!parsed) return null;
+
+      return {
+        id: voucherId,
+        funder: parsed.funder,
+        school: parsed.school,
+        token: parsed.token,
+        amount: parsed.amount,
+        category: parsed.category,
+        expiresAt: parsed.expires_at,
+        status: parsed.status,
+        attesters: parsed.attesters,
+        threshold: parsed.threshold,
+        attestationCount: parsed.attestation_count,
+      };
+    } catch (err) {
+      logger.error(
+        { err, voucherId: voucherId.toString() },
+        "fetchVoucher error",
+      );
+      return null;
+    }
   }
 }
 
@@ -64,13 +124,21 @@ export async function isAttesterAuthorized(
   checker: ChainChecker,
   voucherId: bigint,
   attesterAddress: string,
-): Promise<{ authorized: boolean; reason: string; voucher: OnChainVoucher | null }> {
+): Promise<{
+  authorized: boolean;
+  reason: string;
+  voucher: OnChainVoucher | null;
+}> {
   const voucher = await checker.fetchVoucher(voucherId);
   if (!voucher) {
-    return { authorized: false, reason: 'Could not fetch on-chain voucher', voucher: null };
+    return {
+      authorized: false,
+      reason: "Could not fetch on-chain voucher",
+      voucher: null,
+    };
   }
 
-  if (voucher.status !== 'Funded') {
+  if (voucher.status !== "Funded") {
     return {
       authorized: false,
       reason: `Voucher status is ${voucher.status}, not Funded`,
@@ -80,7 +148,7 @@ export async function isAttesterAuthorized(
 
   const nowSec = Math.floor(Date.now() / 1000);
   if (nowSec >= Number(voucher.expiresAt)) {
-    return { authorized: false, reason: 'Voucher has expired', voucher };
+    return { authorized: false, reason: "Voucher has expired", voucher };
   }
 
   const inSet = voucher.attesters.some(
@@ -94,5 +162,5 @@ export async function isAttesterAuthorized(
     };
   }
 
-  return { authorized: true, reason: 'Authorized', voucher };
+  return { authorized: true, reason: "Authorized", voucher };
 }
