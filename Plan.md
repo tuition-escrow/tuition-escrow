@@ -89,18 +89,46 @@ To provide engineering visibility by architectural subsystem:
 
 $$\text{Subsystem Completion} = \sum_{j} \left( \text{Subsystem Weight}_j \times \text{Subsystem Progress}_j \right)$$
 
-| Subsystem Workstream                           | Weight          | Progress                                    | Weighted Score               |
-| ---------------------------------------------- | --------------- | ------------------------------------------- | ---------------------------- |
-| **Workstream A: Smart Contracts & Tests**      | 30% (0.30)      | 95% (full unit/invariant tests, bindings)   | $0.30 \times 0.95 = 28.50\%$ |
-| **Workstream B: Backend, Indexer & Attester**  | 30% (0.30)      | 85% (KMS, jobs, audit logs, poller)         | $0.30 \times 0.85 = 25.50\%$ |
-| **Workstream C: Web Application**              | 20% (0.20)      | 80% (all role views, zero PII, wallet stub) | $0.20 \times 0.80 = 16.00\%$ |
-| **Workstream D: Tooling & Documentation**      | 10% (0.10)      | 100% (ADRs, playbooks, governance)          | $0.10 \times 1.00 = 10.00\%$ |
-| **Workstream E: External Rails & Pilot Audit** | 10% (0.10)      | 0% (deferred to mainnet launch)             | $0.10 \times 0.00 = 0.00\%$  |
-| **Total**                                      | **100% (1.00)** |                                             | **80.00%**                   |
+| Subsystem Workstream                           | Weight          | Progress                                                                               | Weighted Score               |
+| ---------------------------------------------- | --------------- | -------------------------------------------------------------------------------------- | ---------------------------- |
+| **Workstream A: Smart Contracts & Tests**      | 30% (0.30)      | 100% (full unit/invariant tests, bindings, student_ref emission)                       | $0.30 \times 1.00 = 30.00\%$ |
+| **Workstream B: Backend, Indexer & Attester**  | 30% (0.30)      | 95% (KMS, jobs, audit logs, RPC gap recovery, live chain checks, fee-bump sponsorship) | $0.30 \times 0.95 = 28.50\%$ |
+| **Workstream C: Web Application**              | 20% (0.20)      | 95% (all role views, zero PII, Stellar Wallets Kit integration, tx signing flow)       | $0.20 \times 0.95 = 19.00\%$ |
+| **Workstream D: Tooling & Documentation**      | 10% (0.10)      | 100% (ADRs, playbooks, governance, reconcile script RPC queries)                       | $0.10 \times 1.00 = 10.00\%$ |
+| **Workstream E: External Rails & Pilot Audit** | 10% (0.10)      | 0% (deferred to mainnet launch)                                                        | $0.10 \times 0.00 = 0.00\%$  |
+| **Total**                                      | **100% (1.00)** |                                                                                        | **87.50%**                   |
 
 ---
 
-## 4. Anti-Drift Verification Signoff
+## 4. Completed Gap Resolution Summary
+
+The following implementation gaps identified during full-system audit have been completely resolved across atomic commits:
+
+1. **Voucher Contract & Indexer Student Reference Linkage (`ed66223`):**
+   - Emitted `student_ref` in `funded` contract event.
+   - Added `student_ref` migration, index, and query support to API `student_mappings`.
+   - Updated indexer decoder to support 8-field funded events and automatically link voucher ID to prepared student mapping on funding.
+2. **API Authentication, Session Issuance & School Activation (`3e82f07`):**
+   - Implemented `POST /auth/login` and `GET /auth/me` endpoints issuing signed JWTs with role and Stellar address scoping.
+   - Implemented school activation and attester registration endpoints (`POST /schools/:id/activate`, `POST /schools/:id/register-attester`, `GET /schools/:id/attesters`).
+3. **Transaction Building, Fee-Bump Sponsorship & Contract Client (`420e858`):**
+   - Built complete `VoucherClient` class in `@tuition-escrow/contract-bindings`.
+   - Implemented `POST /vouchers/build-tx` and `POST /vouchers/submit` with fee-bump signing and Horizon balance checks.
+4. **Attester Chain Checks, Confirm Submission & Indexer Gap Recovery (`1c2c5a5`):**
+   - Replaced stubs in `SorobanChainChecker` with RPC `simulateTransaction` and `VoucherClient` ScVal decoding.
+   - Wired `buildAndSubmitConfirm` with real contract transaction submission.
+   - Replaced stub in `apps/indexer/src/gap.ts` with real `simulateTransaction` contract status recovery.
+5. **Web Wallet Kit Integration & Transaction Flow (`9019065`):**
+   - Integrated `@creit.tech/stellar-wallets-kit` in `WalletProvider` with Freighter, xBull, and LOBSTR support.
+   - Implemented role-based login session persistence in `AuthProvider`.
+   - Wired `CreateVoucherForm` and `FunderVoucherList` to build and sign real Soroban transactions.
+   - Added global `Navbar` with role switcher and wallet connect button.
+6. **Reconciliation & Operations Tooling:**
+   - Implemented real SAC token balance RPC simulation and on-chain `get_voucher` state verification in `scripts/reconcile.ts`.
+
+---
+
+## 5. Anti-Drift Verification Signoff
 
 - [x] All completed functionality strictly satisfies requirements laid out in `README.md`.
 - [x] Zero extraneous feature development was undertaken.

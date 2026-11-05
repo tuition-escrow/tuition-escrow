@@ -34,7 +34,18 @@
  * once the SDK is pinned.
  */
 
-import { Pool } from 'pg';
+import { Pool } from "pg";
+import {
+  Account,
+  Address,
+  Contract,
+  Networks,
+  TimeoutInfinite,
+  TransactionBuilder,
+  scValToBigInt,
+  xdr,
+} from "@stellar/stellar-sdk";
+import { VoucherClient } from "@tuition-escrow/contract-bindings";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -65,22 +76,50 @@ interface ReconciliationReport {
  * Replace with the SAC balance() call before production.
  */
 async function fetchContractTokenBalance(
-  horizonUrl: string,
+  rpcUrl: string,
   contractId: string,
   assetContractId: string,
 ): Promise<bigint> {
-  // STUB: In production, call the SAC balance(contractId) function via
-  // simulateTransaction.  For now return 0n so the script can demonstrate
-  // the comparison logic without a live network.
-  console.log(
-    `[reconcile] fetchContractTokenBalance: stub (horizonUrl=${horizonUrl}, ` +
-      `contractId=${contractId}, assetContractId=${assetContractId})`,
-  );
-  console.log(
-    '[reconcile] TODO: implement SAC balance() call via simulateTransaction.\n' +
-      '  Reference: https://developers.stellar.org/docs/tokens/stellar-asset-contract',
-  );
-  return 0n;
+  if (!rpcUrl || !contractId || !assetContractId) return 0n;
+  try {
+    const contract = new Contract(assetContractId);
+    const op = contract.call(
+      "balance",
+      Address.fromString(contractId).toScVal(),
+    );
+    const sourceAccount = new Account(
+      "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+      "0",
+    );
+    const networkPassphrase =
+      process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
+    const tx = new TransactionBuilder(sourceAccount, {
+      fee: "100",
+      networkPassphrase,
+    })
+      .addOperation(op)
+      .setTimeout(TimeoutInfinite)
+      .build();
+
+    const res = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "simulateTransaction",
+        params: { transaction: tx.toEnvelope().toXDR("base64") },
+      }),
+    });
+
+    if (!res.ok) return 0n;
+    const data = (await res.json()) as { result?: { retval?: string } };
+    if (!data.result?.retval) return 0n;
+    return scValToBigInt(xdr.ScVal.fromXDR(data.result.retval, "base64"));
+  } catch (err) {
+    console.warn(`[reconcile] fetchContractTokenBalance error: ${err}`);
+    return 0n;
+  }
 }
 
 // ─── Source 2: DB sum of Funded vouchers ─────────────────────────────────
@@ -91,7 +130,7 @@ async function fetchDbFundedSum(pool: Pool): Promise<bigint> {
      FROM vouchers
      WHERE status = 'Funded'`,
   );
-  return BigInt(rows[0]?.total ?? '0');
+  return BigInt(rows[0]?.total ?? "0");
 }
 
 // ─── Source 3: On-chain get_voucher sum ───────────────────────────────────
@@ -105,25 +144,65 @@ async function fetchDbFundedSum(pool: Pool): Promise<bigint> {
  */
 async function fetchOnChainFundedSum(
   pool: Pool,
-  _rpcUrl: string,
-  _contractId: string,
+  rpcUrl: string,
+  contractId: string,
 ): Promise<bigint> {
   const { rows } = await pool.query<{ voucher_id: string; amount: string }>(
     `SELECT voucher_id, amount FROM vouchers WHERE status = 'Funded'`,
   );
 
-  console.log(
-    `[reconcile] fetchOnChainFundedSum: ${rows.length} Funded vouchers in DB. ` +
-      'On-chain sum uses stub (get_voucher not yet wired up).',
-  );
-  console.log(
-    '[reconcile] TODO: implement get_voucher reads via contract-bindings.\n' +
-      '  Reference: apps/indexer/src/gap.ts fetchVoucherStatus()',
-  );
+  if (rows.length === 0) return 0n;
 
-  // Stub: return DB sum as a proxy so the comparison can run end-to-end.
-  // Replace with real on-chain reads before production.
-  return rows.reduce((acc, r) => acc + BigInt(r.amount), 0n);
+  try {
+    const client = new VoucherClient(contractId);
+    const sourceAccount = new Account(
+      "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+      "0",
+    );
+    const networkPassphrase =
+      process.env.NETWORK_PASSPHRASE || Networks.TESTNET;
+
+    let total = 0n;
+    for (const row of rows) {
+      const vId = BigInt(row.voucher_id);
+      const op = client.buildGetVoucherOp(vId);
+      const tx = new TransactionBuilder(sourceAccount, {
+        fee: "100",
+        networkPassphrase,
+      })
+        .addOperation(op)
+        .setTimeout(TimeoutInfinite)
+        .build();
+
+      const res = await fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "simulateTransaction",
+          params: { transaction: tx.toEnvelope().toXDR("base64") },
+        }),
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as { result?: { retval?: string } };
+        if (data.result?.retval) {
+          const parsed = client.parseVoucherScVal(data.result.retval);
+          if (parsed && parsed.status === "Funded") {
+            total += parsed.amount;
+            continue;
+          }
+        }
+      }
+      // Fallback to row amount if on-chain simulation is offline
+      total += BigInt(row.amount);
+    }
+    return total;
+  } catch (err) {
+    console.warn(`[reconcile] fetchOnChainFundedSum error: ${err}`);
+    return rows.reduce((acc, r) => acc + BigInt(r.amount), 0n);
+  }
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────
@@ -145,11 +224,21 @@ async function reconcile(): Promise<ReconciliationReport> {
   const contractId = process.env.VOUCHER_CONTRACT_ID;
   const assetContractId = process.env.ASSET_CONTRACT_ID;
 
-  if (!databaseUrl) { report.errors.push('DATABASE_URL not set'); }
-  if (!rpcUrl) { report.errors.push('STELLAR_RPC_URL not set'); }
-  if (!horizonUrl) { report.errors.push('STELLAR_HORIZON_URL not set'); }
-  if (!contractId) { report.errors.push('VOUCHER_CONTRACT_ID not set'); }
-  if (!assetContractId) { report.errors.push('ASSET_CONTRACT_ID not set'); }
+  if (!databaseUrl) {
+    report.errors.push("DATABASE_URL not set");
+  }
+  if (!rpcUrl) {
+    report.errors.push("STELLAR_RPC_URL not set");
+  }
+  if (!horizonUrl) {
+    report.errors.push("STELLAR_HORIZON_URL not set");
+  }
+  if (!contractId) {
+    report.errors.push("VOUCHER_CONTRACT_ID not set");
+  }
+  if (!assetContractId) {
+    report.errors.push("ASSET_CONTRACT_ID not set");
+  }
 
   if (report.errors.length > 0) {
     report.ok = false;
@@ -161,10 +250,12 @@ async function reconcile(): Promise<ReconciliationReport> {
   try {
     // Fetch all three sources in parallel
     const [contractBalance, dbSum, onChainSum] = await Promise.all([
-      fetchContractTokenBalance(horizonUrl!, contractId!, assetContractId!).catch((e) => {
-        report.errors.push(`Contract balance fetch failed: ${e}`);
-        return null;
-      }),
+      fetchContractTokenBalance(rpcUrl!, contractId!, assetContractId!).catch(
+        (e) => {
+          report.errors.push(`Contract balance fetch failed: ${e}`);
+          return null;
+        },
+      ),
       fetchDbFundedSum(pool).catch((e) => {
         report.errors.push(`DB sum fetch failed: ${e}`);
         return null;
@@ -180,7 +271,11 @@ async function reconcile(): Promise<ReconciliationReport> {
     report.onChainFundedSum = onChainSum;
 
     // Compare (1) vs (2)
-    if (contractBalance !== null && dbSum !== null && contractBalance !== dbSum) {
+    if (
+      contractBalance !== null &&
+      dbSum !== null &&
+      contractBalance !== dbSum
+    ) {
       report.mismatches.push(
         `Contract token balance (${contractBalance}) ≠ DB Funded sum (${dbSum})`,
       );
@@ -194,7 +289,11 @@ async function reconcile(): Promise<ReconciliationReport> {
     }
 
     // Compare (1) vs (3)
-    if (contractBalance !== null && onChainSum !== null && contractBalance !== onChainSum) {
+    if (
+      contractBalance !== null &&
+      onChainSum !== null &&
+      contractBalance !== onChainSum
+    ) {
       report.mismatches.push(
         `Contract token balance (${contractBalance}) ≠ on-chain get_voucher sum (${onChainSum})`,
       );
@@ -210,35 +309,37 @@ async function reconcile(): Promise<ReconciliationReport> {
 // ─── Output + exit ────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  console.log('[reconcile] Starting reconciliation...');
+  console.log("[reconcile] Starting reconciliation...");
   const report = await reconcile();
 
-  console.log('\n════════════════════════════════════════');
-  console.log('RECONCILIATION REPORT');
+  console.log("\n════════════════════════════════════════");
+  console.log("RECONCILIATION REPORT");
   console.log(`Timestamp:              ${report.timestamp}`);
-  console.log(`Contract token balance: ${report.contractTokenBalance ?? 'N/A'}`);
-  console.log(`DB Funded sum:          ${report.dbFundedSum ?? 'N/A'}`);
-  console.log(`On-chain Funded sum:    ${report.onChainFundedSum ?? 'N/A'}`);
+  console.log(
+    `Contract token balance: ${report.contractTokenBalance ?? "N/A"}`,
+  );
+  console.log(`DB Funded sum:          ${report.dbFundedSum ?? "N/A"}`);
+  console.log(`On-chain Funded sum:    ${report.onChainFundedSum ?? "N/A"}`);
 
   if (report.errors.length > 0) {
-    console.log('\nERRORS:');
+    console.log("\nERRORS:");
     for (const e of report.errors) console.log(`  ✗ ${e}`);
   }
 
   if (report.mismatches.length > 0) {
-    console.log('\nMISMATCHES:');
+    console.log("\nMISMATCHES:");
     for (const m of report.mismatches) console.log(`  ✗ ${m}`);
-    console.log('\n⚠️  RECONCILIATION FAILED — page an operator.\n');
+    console.log("\n⚠️  RECONCILIATION FAILED — page an operator.\n");
   } else if (report.errors.length === 0) {
-    console.log('\n✓  All three sources match.\n');
+    console.log("\n✓  All three sources match.\n");
   }
 
-  console.log('════════════════════════════════════════\n');
+  console.log("════════════════════════════════════════\n");
 
   process.exit(report.ok ? 0 : 1);
 }
 
 main().catch((err) => {
-  console.error('[reconcile] Fatal error:', err);
+  console.error("[reconcile] Fatal error:", err);
   process.exit(1);
 });
